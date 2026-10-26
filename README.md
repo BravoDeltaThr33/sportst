@@ -43,13 +43,25 @@ The repository ships with no one's settings and no favourite teams. sportst keep
 
 A config file only needs the keys you want to change; anything it leaves out uses the default. Section 17 lists every key. Cached logos, pages and saved betting lines go in `~/.cache/sportst/`; nothing else is written anywhere, and no account or API key is needed for any of the data sources.
 
-| Overview | Championship odds | Calendar |
+| Overview | Scoreboard | Game Center (Z): basketball |
 | --- | --- | --- |
-| ![The Overview tab](screenshots/overview.png) | ![Championship odds on the Playoffs tab](screenshots/playoff-odds.png) | ![The pop-out calendar](screenshots/calendar.png) |
+| ![The Overview tab: your teams' latest results and next games, and today's games across every sport](screenshots/01-overview.png) | ![The NFL Scoreboard beside a game's closing line](screenshots/02-scoreboard.png) | ![The Game Center: a finished NBA game with each team's shots and the win probability](screenshots/03-game-center-basketball.png) |
 
-| Game Center (Z) | Today across every sport | A team's page |
+| Game Center (Z): hockey | A team's page | Standings |
 | --- | --- | --- |
-| ![The Game Center: a live college football game](screenshots/game-center.png) | ![Every league's games today on the Overview](screenshots/today.png) | ![A team's page: the season game by game beside its dashboard](screenshots/schedule.png) |
+| ![The Game Center: a finished NHL game with every shot on goal, the goalies and the goals](screenshots/04-game-center-hockey.png) | ![A team's page: the season game by game beside its dashboard](screenshots/05-team-page.png) | ![The NFL standings by division](screenshots/06-standings.png) |
+
+| Scouting report | Plays: shot chart | Plays: pitch by pitch |
+| --- | --- | --- |
+| ![A scouting report: the matchup's stat edges beside each team's leaders, injuries and news](screenshots/07-scouting-report.png) | ![The Plays tab: scoring plays with clips beside the basketball shot chart](screenshots/08-plays-shot-chart.png) | ![The Plays tab: an MLB at-bat pitch by pitch with the strike zone](screenshots/09-plays-pitch-by-pitch.png) |
+
+| Team stats | Playoffs and championship odds | Betting |
+| --- | --- | --- |
+| ![NFL team stats by division](screenshots/10-team-stats.png) | ![The MLB playoff bracket beside the championship odds](screenshots/11-playoffs-bracket-and-odds.png) | ![The Betting tab: value picks, every sportsbook's line and sportst's read](screenshots/12-betting.png) |
+
+| Ask Kim ($) | Olympics: Event Center | Calendar (C) |
+| --- | --- | --- |
+| ![Ask Kim: the week's three best bets in a speech bubble](screenshots/13-ask-kim.png) | ![The Event Center: the podium and results of an Olympic downhill](screenshots/14-olympics-event-center.png) | ![The pop-out calendar over the Scoreboard](screenshots/15-calendar.png) |
 
 
 ## Contents
