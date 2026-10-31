@@ -106,7 +106,7 @@ Press Z for the Game Center: the game full screen in big digits and team colours
 
 ### Before every game
 
-A scouting report: the line, ESPN's win predictor, the weather, each team's recent form, season leaders, the full injury list and the latest news, and every season stat side by side - with the matchup edges (one team's strength against the other's weakness) called out in colour so they jump off the screen.
+A scouting report: the line, ESPN's win predictor, the weather, each team's recent form, season leaders, the full injury list and the latest news, and every season stat side by side - with the matchup edges (one team's strength against the other's weakness) called out in colour so they jump off the screen. Pick a headline and press enter to read the whole story right in sportst, in a card over the report - or to play the video, when the headline is one.
 
 ### Betting
 
@@ -240,7 +240,7 @@ Other terminal windows that were already open need to be closed and opened again
 ### Step 5 - Check it and run it
 
 ```
-sportst --version               # sportst 6.0.0
+sportst --version               # sportst 6.1.0
 sportst --scores -L nba         # plain text: a quick network check
 sportst                         # the app
 ```
@@ -293,7 +293,7 @@ Windows' own Python has no curses module, which sportst needs for the full-scree
 cp /mnt/c/Users/YOUR-WINDOWS-NAME/Downloads/sportst ~/
 ```
 
-### Upgrading from an earlier version (for example 5.5.0 to 6.0.0)
+### Upgrading from an earlier version (for example 6.0.0 to 6.1.0)
 
 Your settings and favorites live in ~/.config/sportst and are not touched by an upgrade, so this only swaps the program file.
 
@@ -334,12 +334,12 @@ chmod +x ~/.local/bin/sportst
 6. Check it:
 
 ```
-sportst --version               # sportst 6.0.0
+sportst --version               # sportst 6.1.0
 sudo apt install mpv            # optional: hear clips in the terminal
 sportst                         # pick a game, 5 for Plays, j and enter
 ```
 
-7. Optional: clear the cache. Nothing in 6.0.0 needs it, but it is safe - logos and Olympic pages are simply fetched again:
+7. Optional: clear the cache. Nothing in 6.1.0 needs it - its college baseball logos are fetched again on their own, under new file names - but it is safe: logos and Olympic pages are simply fetched again:
 
 ```
 rm -rf ~/.cache/sportst
@@ -527,7 +527,7 @@ The slate on the left, the selected game on the right. Baseball shows innings wi
 
 ### Scouting (2)
 
-The scouting report for the highlighted game - section 7.
+The scouting report for the highlighted game - section 7. n / N pick one of the team news headlines and enter opens the whole story in the article card.
 
 ### Boxscore (3)
 
@@ -755,11 +755,21 @@ Below that, every season stat side by side, grouped into Offense, Defense, Speci
 
 ### Right pane - each team
 
-Form: the last five results. Season leaders (passing, rushing, receiving, sacks, tackles; points, rebounds, assists; goals and points; batting and pitching). The full injury list from the team's roster, grouped Out, IR, Doubtful, Questionable, Day-to-day. The latest headlines from ESPN's team news, with their age - the team's own news, not the league-wide roundups ESPN tags with every team - with ▼ in red on bad news (ruled out, hurt) and ▲ in green on good (back, activated).
+Form: the last five results. Season leaders (passing, rushing, receiving, sacks, tackles; points, rebounds, assists; goals and points; batting and pitching). The full injury list from the team's roster, grouped Out, IR, Doubtful, Questionable, Day-to-day. The latest headlines from ESPN's team news, with their age - the team's own news, not the league-wide roundups ESPN tags with every team - with ▼ in red on bad news (ruled out, hurt), ▲ in green on good (back, activated) and an orange ▶ before a video.
 
 The AHL report comes from the league's own game preview instead: last ten, streak, home and road records, power play and penalty kill (home and road too), leading scorers, players on a point streak, the top rookie, records when leading or trailing after two, and the season series.
 
 Before a season's first games the season numbers are last season's where the source still serves them; the records read 0-0. College teams rarely publish injury reports, so an empty list there means "none listed".
+
+### Reading a headline: the article card
+
+Every headline in the report can be opened. Press n to light up the first headline (n again for the next, N for the one before - both teams' headlines, top to bottom, round and round) and press enter: the article card opens over the report with the whole story - the headline, the byline and when it was posted, then the story itself, paragraph by paragraph, with its headings, lists and quotes. Pictures, embedded players and ads are left out. The mouse works too: click a headline to pick it, click it again (or double-click) to open it.
+
+In the card, j / k scroll a line, space or PgDn a page, G and Home jump to the end and the top. o opens the story on espn.com in your browser. n / N go straight to the next or previous headline without closing the card, and esc, Q, backspace or a click closes it.
+
+A ▶ headline is a video: the card shows what it is and how long it runs, and enter plays it with your clip player, the same one the Plays tab uses - mpv, ffplay or VLC, sound only unless Settings has Show the video on (section 6, Scoring-play clips). A story that carries a video says so at the top, and enter plays that one. X stops it.
+
+The story comes from ESPN's content API, free and keyless like every other source (section 20); sportst lays the HTML out itself, so no text browser - w3m, lynx - is needed. A few items have no text to show (an interactive page such as bracketology, or a gallery): the card says so, and o opens them in the browser. An ESPN+ story is marked ESPN+; if ESPN sends only its opening, the rest is on espn.com for subscribers.
 
 ## 8. The Stats tab, Top 25 and conference filters
 
@@ -1233,6 +1243,14 @@ which prints a team's badge and then its logo in every style, and set the sharpe
 
 sportst picks between ESPN's normal and dark-background version of each logo by which one reads better on black, so Clemson's paw stays orange and Iowa's hawk is gold rather than black. Anything black inside a logo is lifted to charcoal so the shape does not vanish.
 
+### College baseball logos
+
+College baseball has two things the other sports do not. ESPN numbers its college baseball teams apart from its other college sports, so a team's baseball number cannot be put into ESPN's usual logo address - Arkansas is team 58 in baseball, and 58 in that address is South Florida's logo. sportst takes each baseball team's logo from ESPN's baseball data itself (or its list of baseball teams), so every school shows its own.
+
+And many programs have a baseball mark of their own, the one on their caps. Those show it instead of the school's logo: Arkansas's A, LSU's interlocking LSU, Mississippi State's M-over-S, South Carolina's script SC, Clemson's C, Florida State's FS, Arizona State's AS, Kansas State's KS, Fresno State's FS and Ole Miss's baseball script - the marks their programs' Wikipedia articles use, fetched once from Wikimedia Commons and kept with the other logos. Every other team shows the school's own mark from ESPN, which is what most power-conference programs wear on their caps anyway (Tennessee's T, Michigan's block M, Oregon's O, North Carolina's interlocking NC ...). A baseball mark Wikimedia cannot send at that moment is tried again the next time; until then the school's logo stands in. A mark drawn on a white sheet (LSU's) has the white around it made see-through, so it sits on the dark screen like the others.
+
+Logos kept by 6.0.0 for college baseball were the mixed-up ones; 6.1.0 keeps its college baseball logos under new file names, so they are all fetched again and the old files are simply never read (deleting ~/.cache/sportst/logos/cbase-*.png is safe).
+
 ### Real pictures in Kitty and Ghostty
 
 Kitty and Ghostty can show real images inside the terminal, and sportst uses them when it finds itself in one:
@@ -1381,6 +1399,31 @@ Y                  the whole game's highlights
 X                  stop the clip that is playing (on any tab but
                    Favorites, where X clears the search)
 J K                scroll the screen
+```
+
+### Scouting tab: headlines
+
+```
+n N                pick the next / previous headline (▶ is a video)
+enter              read the picked headline in the article card
+                   (with none picked, enter picks the first)
+esc                let go of the picked headline
+click              pick a headline; click it again to open it
+```
+
+### The article card
+
+```
+j k  ↓ ↑           scroll a line
+space  PgDn PgUp   a page down / up (J and K too)
+G  End             the end of the story
+g  Home            the top
+o                  open the story on espn.com in your browser
+enter              play the video (a video headline, or a story that
+                   carries one); with no video, close the card
+n N                the next / previous headline, without closing
+X                  stop the video that is playing
+esc  Q  backspace  close the card (a click does too)
 ```
 
 ### Basketball
@@ -1706,6 +1749,14 @@ The Settings tab's About side, Pictures, says why. Inside tmux or screen the ter
 
 The terminal was sent pictures it cannot show, usually because Pictures is set to real images in a terminal without Kitty-style images. Set Pictures to auto or text art on the Settings tab, or "pictures": "text" in the config file.
 
+**A college baseball team shows the wrong school's logo (6.0.0) or its school logo instead of its baseball mark.**
+
+6.0.0 could show another school's logo for a college baseball team (Arkansas got South Florida's); 6.1.0 fetches every college baseball logo again under new file names, so updating is the whole fix. The ten programs with a baseball mark of their own (section 14) get it from Wikimedia Commons; if Wikimedia did not answer that time, the school's logo stands in until the next start, when the mark is fetched again. If it never arrives, check that upload.wikimedia.org is reachable from your computer.
+
+**The article card says "Could not load the story".**
+
+ESPN's content API did not answer, or the story has been taken down. The summary from the feed is still shown, o opens the story on espn.com, and sportst asks again a minute later.
+
 **No pitch data on a baseball game.**
 
 ESPN publishes pitch locations only for games it covers pitch by pitch. Spring training, some college games and older games have none; the screen says so rather than drawing an empty zone.
@@ -1834,9 +1885,17 @@ Prediction-market prices for game winners and for each league's champion, from K
 
 The Olympic sports ESPN does not cover: each sport's page for its events and medallists, each event's page for its results, and each Games' medal table. Pages are read as rendered HTML with the standard library's html.parser, one request a second at most, and kept in ~/.cache/sportst/wiki/. The IOC's own live results feed is licensed to broadcasters only.
 
+### ESPN's content API (content.core.api.espn.com)
+
+The whole story behind a Scouting headline, for the article card: every item in an ESPN news feed links to it, and it sends the story itself as HTML - the headline, byline, date and text - or, for a video, the clip's description, length and video file. sportst lays the HTML out with the standard library's html.parser and keeps each story for an hour while the app runs. No key, no account. The video itself is played by your media player straight from ESPN's video servers, as clips are.
+
 ### ESPN's image CDN
 
 Team logos and national flags - 128 pixels for drawing in text, 256 for a terminal that shows pictures - cached in ~/.cache/sportst/logos/.
+
+### Wikimedia Commons (upload.wikimedia.org)
+
+The baseball marks of the college baseball programs that wear one of their own - Arkansas's A, LSU, Mississippi State's M-over-S and the others in section 14 - the image files their Wikipedia articles use, fetched once as 250-pixel PNGs and cached with the other logos. No key, no account.
 
 ### ESPN's team schedules (site.api.espn.com)
 
@@ -1857,6 +1916,8 @@ sportst needs no account, no sign-in and no API key of your own. Nothing in it i
 The clip sources added in 4.8 need no key either. When a clip opens in your browser, nhl.com or YouTube sees an ordinary visit from your browser, exactly as if you had clicked a link.
 
 The extra stats services added in 4.2 (the NHL's and MLB's stats APIs and ncaa-api for NCAA.com) and the betting sources added in 4.3 (Action Network and Kalshi) need no key either. sportst only reads prices; it cannot place bets and never touches a sportsbook account.
+
+ESPN's content API, which the article card reads stories from, and Wikimedia Commons, where the college baseball marks come from (both new in 6.1.0), need no key either.
 
 The program does contain one key: HockeyTech's AHL feed key (50c2cd9b5e18e390). It is not a secret and not tied to anyone. It is the public key the AHL's own website, theahl.com, sends from every visitor's browser to load its scores. The file is safe to share as is. The Settings tab shows it beside HockeyTech in the data-source list.
 

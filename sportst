@@ -48,7 +48,7 @@ from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 
 APP = "sportst"
-VERSION = "6.0.0"
+VERSION = "6.1.0"
 
 CONFIG_DIR = os.path.join(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), APP
@@ -3733,9 +3733,145 @@ def logo_score(image):
     return colourful / opaque + 0.5 * visible / opaque
 
 
+# College baseball logos. ESPN numbers its college baseball teams apart from
+# its other college sports, so a baseball id cannot go into the usual logo
+# address (58 is Arkansas in baseball and South Florida's logo): the logo
+# comes from the team's own data, or from the league's team list. Programs
+# that wear a mark of their own on their caps - Arkansas's A, LSU's
+# interlocking letters, Mississippi State's M-over-S - show that mark
+# instead, from Wikimedia: ESPN's college baseball id -> the file the
+# program's Wikipedia article uses (on Commons). Every other team shows
+# the school's own mark from ESPN.
+CBASE_LOGOS = {
+    "58": "Arkansas Razorbacks baseball logo.png",           # Arkansas: the A
+    "85": "LSU Baseball logo.png",                           # LSU: interlocking LSU
+    "150": "Mississippi State Bulldogs baseball logo.svg",   # Mississippi State: M-over-S
+    "193": "USC baseball logo.svg",                          # South Carolina: script SC
+    "117": "Clemson Baseball cap logo.svg",                  # Clemson: the C
+    "72": "Florida State Seminoles baseball logo.svg",       # Florida State: FS
+    "59": "Arizona State Sun Devils baseball logo.svg",      # Arizona State: AS
+    "264": "Kansas State baseball cap insignia 2019 version.png",  # Kansas State: KS
+    "92": "Ole Miss Rebels baseball logo.svg",               # Ole Miss: the baseball script
+    "137": "Fresno State Bulldogs baseball logo.svg",        # Fresno State: FS
+}
+CBASE_LOGO_TAG = "bb"     # in the logo cache's file names: 6.0 kept wrong ones
+_CBASE_SCHOOLS = {"logos": None, "tried": 0.0}
+WIKIMEDIA_HOST = "upload.wikimedia.org"
+
+
+def wikimedia_url(name, px=0):
+    """A file on Wikimedia's image servers: a thumbnail `px` wide (always a
+    PNG, even for an SVG), or with no px the original. Names starting "en:"
+    live on English Wikipedia rather than Commons."""
+    import hashlib
+    repo = "commons"
+    if name.startswith("en:"):
+        repo, name = "en", name[3:]
+    name = name.replace(" ", "_")
+    digest = hashlib.md5(name.encode("utf-8")).hexdigest()
+    quoted = urllib.parse.quote(name)
+    base = f"https://{WIKIMEDIA_HOST}/wikipedia/{repo}"
+    if not px:
+        return f"{base}/{digest[0]}/{digest[:2]}/{quoted}"
+    tail = ".png" if name.lower().endswith(".svg") else ""
+    return f"{base}/thumb/{digest[0]}/{digest[:2]}/{quoted}/{px}px-{quoted}{tail}"
+
+
+def clear_backdrop(image):
+    """A logo drawn on a white sheet with no transparency (LSU's baseball
+    mark) has the white around it made see-through: everything near-white
+    that reaches the edge, softly at its rim. White inside the mark (letters
+    filled white) stays. Returns the image, changed or not."""
+    width, height, data = image
+    if any(data[i] < 250 for i in range(3, len(data), 4)):
+        return image                     # it has transparency already
+    def light(i):
+        return min(data[i], data[i + 1], data[i + 2])
+    corners = [0, width - 1, (height - 1) * width, height * width - 1]
+    if sum(light(p * 4) >= 240 for p in corners) < 2:
+        return image                     # not a white sheet
+    out = bytearray(data)
+    seen = bytearray(width * height)
+    stack = list(range(width)) + [(height - 1) * width + x for x in range(width)]
+    stack += [y * width for y in range(height)] + [y * width + width - 1 for y in range(height)]
+    while stack:
+        p = stack.pop()
+        if seen[p]:
+            continue
+        seen[p] = 1
+        value = light(p * 4)
+        if value < 200:
+            continue
+        out[p * 4 + 3] = 0 if value >= 240 else 255 * (240 - value) // 40
+        x, y = p % width, p // width
+        if x:
+            stack.append(p - 1)
+        if x < width - 1:
+            stack.append(p + 1)
+        if y:
+            stack.append(p - width)
+        if y < height - 1:
+            stack.append(p + width)
+    return width, height, out
+
+
+def cbase_school_logo(ident, timeout=15):
+    """ESPN's logo for a college baseball team id, from the league's team
+    list (asked for once, on the logo thread, only for a team that came
+    without a logo of its own: a favourite, a poll entry)."""
+    logos = _CBASE_SCHOOLS["logos"]
+    if logos is None and time.time() - _CBASE_SCHOOLS["tried"] > 300:
+        _CBASE_SCHOOLS["tried"] = time.time()
+        url, spare = Espn().teams("cbase")
+        for candidate in [url] + spare:
+            try:
+                data = http_json(candidate, timeout)
+            except Exception:  # noqa: BLE001 - a missing logo is cosmetic
+                continue
+            logos = {team["id"]: team["logo"] for team in parse_teams(data)
+                     if team["id"] and team["logo"]}
+            _CBASE_SCHOOLS["logos"] = logos
+            break
+    return (logos or {}).get(str(ident or ""), "")
+
+
+def cbase_logo_urls(team, size):
+    """A college baseball team's own mark from Wikimedia where it wears one,
+    then the school's logo from ESPN; never ESPN's address built from the
+    baseball id, which belongs to another school."""
+    ident = str(team.get("id") or "")
+    urls = []
+    mark = CBASE_LOGOS.get(ident)
+    if mark:
+        # 250 is a thumbnail width Wikimedia keeps ready, and one file does
+        # for both sizes; a PNG smaller than that has no thumbnail, so its
+        # original comes next
+        urls.append(wikimedia_url(mark, 250))
+        if not mark.lower().endswith(".svg"):
+            urls.append(wikimedia_url(mark))
+    href = team.get("logo") or (cbase_school_logo(ident) if ident else "")
+    if href:
+        urls.extend(espn_logo_variants(href, size) if "espncdn.com" in href else [href])
+    return urls
+
+
+def espn_logo_variants(href, size):
+    """ESPN's dark-background variant of a logo and the logo itself, both
+    resized on ESPN's side, then the full-size original."""
+    path = urllib.parse.urlsplit(href).path
+    dark = path.replace("/500/", "/500-dark/", 1)
+    urls = []
+    for candidate in ([dark] if dark != path else []) + [path]:
+        urls.append(f"https://a.espncdn.com/combiner/i?img={candidate}&w={size}&h={size}")
+    urls.append(href)
+    return urls
+
+
 def logo_urls(league, team, size=LOGO_SOURCE_PX):
     """Candidate variants: ESPN's dark-background logo and the normal one,
     both resized on ESPN's side, then the full-size original."""
+    if league == "cbase":
+        return cbase_logo_urls(team, size)
     href = team.get("logo") or ""
     if not href and league == "ahl" and team.get("id"):
         href = HT_LOGO.format(team["id"])         # a favourite keeps no logo of its own
@@ -3750,8 +3886,9 @@ def logo_urls(league, team, size=LOGO_SOURCE_PX):
     if href and "espncdn.com" not in href:
         return [href]
     if not href:
+        # (college baseball went to cbase_logo_urls: its ids are not these)
         folder = {"nfl": "nfl", "nhl": "nhl", "cfb": "ncaa", "nba": "nba",
-                  "cbb": "ncaa", "mlb": "mlb", "cbase": "ncaa"}.get(league)
+                  "cbb": "ncaa", "mlb": "mlb"}.get(league)
         if not folder:
             return []
         ident = team.get("id") if league in COLLEGE_LEAGUES else \
@@ -3759,13 +3896,7 @@ def logo_urls(league, team, size=LOGO_SOURCE_PX):
         if not ident:
             return []
         href = f"https://a.espncdn.com/i/teamlogos/{folder}/500/{ident}.png"
-    path = urllib.parse.urlsplit(href).path
-    dark = path.replace("/500/", "/500-dark/", 1)
-    urls = []
-    for candidate in ([dark] if dark != path else []) + [path]:
-        urls.append(f"https://a.espncdn.com/combiner/i?img={candidate}&w={size}&h={size}")
-    urls.append(href)
-    return urls
+    return espn_logo_variants(href, size)
 
 
 def shrink_image(image, target=LOGO_SOURCE_PX):
@@ -3775,6 +3906,9 @@ def shrink_image(image, target=LOGO_SOURCE_PX):
     width, height, data = image
     factor = max(width, height) // target
     if factor < 2:
+        if max(width, height) > target * 5 // 4:      # a 250-pixel picture, say
+            scale = target / max(width, height)
+            return scale_rgba(image, round(width * scale), round(height * scale))
         return image
     new_w, new_h = width // factor, height // factor
     out = bytearray(new_w * new_h * 4)
@@ -3829,6 +3963,8 @@ class LogoStore:
         ident = str(team.get("id") or team.get("abbr") or "")
         if not ident:
             return None
+        if league == "cbase":
+            ident += "-" + CBASE_LOGO_TAG      # a new file name, so 6.0's are not reused
         key = (league, ident, "png") if raw else (league, ident)
         with self.lock:
             if key in self.images:
@@ -3836,13 +3972,14 @@ class LogoStore:
             if key in self.failed or key in self.pending:
                 return None
             self.pending.add(key)
-        self.queue.put((key, logo_urls(league, team, LOGO_IMAGE_PX if raw
-                                       else LOGO_SOURCE_PX)))
+        # the addresses are worked out on the logo thread: a college
+        # baseball team may need the league's team list first
+        self.queue.put((key, league, dict(team), LOGO_IMAGE_PX if raw else LOGO_SOURCE_PX))
         return None
 
     def _worker(self):
         while True:
-            key, urls = self.queue.get()
+            key, league, team, size = self.queue.get()
             raw = len(key) > 2
             image = None
             path = self._path(key)
@@ -3853,32 +3990,58 @@ class LogoStore:
             except OSError:
                 image = None
             if image is None:
-                best = None
+                try:
+                    urls = logo_urls(league, team, size)
+                except Exception:  # noqa: BLE001 - a missing logo is cosmetic
+                    urls = []
+                best, mark_failed = None, False
                 for url in urls:
-                    try:
-                        blob = http_bytes(url, self.timeout)
-                    except Exception:  # noqa: BLE001 - a missing logo is cosmetic
-                        continue
-                    decoded = png_decode(blob)
+                    decoded = None
+                    for attempt in range(2):
+                        try:
+                            blob = http_bytes(url, self.timeout)
+                            decoded = png_decode(blob)
+                        except urllib.error.HTTPError as exc:
+                            if exc.code == 429 and not attempt:
+                                time.sleep(2)      # busy for a moment: once more
+                                continue
+                        except Exception:  # noqa: BLE001 - a missing logo is cosmetic
+                            pass
+                        break
                     if decoded is None:
+                        mark_failed = mark_failed or WIKIMEDIA_HOST in url
                         continue
+                    if WIKIMEDIA_HOST in url:
+                        cleared = clear_backdrop(decoded)
+                        if cleared is not decoded:
+                            decoded, blob = cleared, png_encode(*cleared)
                     score = logo_score(decoded)
                     # the full-size original is only a fallback for when
                     # both resized variants fail
                     if best is None or score > best[0]:
-                        best = (score, blob, decoded)
+                        best = (score, blob, decoded, url)
                     resized = [u for u in urls if "combiner" in u]
                     if url not in resized or url == resized[-1]:
                         break
                 if best is not None:
-                    _, blob, image = best
+                    _, blob, image, used = best
                     if raw:
                         image = blob
+                    # a team's own mark that could not be fetched this time
+                    # (Wikimedia busy) is tried again next run: the school
+                    # logo standing in for it is shown but not kept
+                    keep = WIKIMEDIA_HOST in used or not mark_failed
+                    # one Wikimedia file serves both sizes, so it is kept for
+                    # both: the other size then needs no request of its own
+                    paths = [path] if keep else []
+                    if WIKIMEDIA_HOST in used:
+                        paths.append(self._path(key[:2] if raw else key + ("png",)))
                     try:
-                        os.makedirs(self.directory, exist_ok=True)
-                        with open(path + ".tmp", "wb") as handle:
-                            handle.write(blob)
-                        os.replace(path + ".tmp", path)
+                        for target in paths:
+                            os.makedirs(self.directory, exist_ok=True)
+                            with open(target + ".tmp", "wb") as handle:
+                                handle.write(blob)
+                            os.replace(target + ".tmp", target)
                     except OSError:
                         pass
             if image is not None and not raw:
@@ -10601,7 +10764,9 @@ def scouting_team_lines(team, side, summary, injuries, news, league, width, favo
                     row.add(chunk, "normal")
                     lines.append(row)
     # news: this team's, not the league roundups every team is tagged in;
-    # ▼ marks bad news (ruled out, hurt), ▲ good (back, activated)
+    # ▼ marks bad news (ruled out, hurt), ▲ good (back, activated), ▶ a
+    # video. Each headline line keeps its article, so n / N can pick it and
+    # enter open it in the article card.
     articles = team_articles(news, team.get("id"))
     if articles and news_count:
         lines.append(Line().add("  News", "accent"))
@@ -10611,7 +10776,12 @@ def scouting_team_lines(team, side, summary, injuries, news, league, width, favo
             row = Line().add(f"    {age:>3} ", "muted")
             row.add("▼ " if tone < 0 else "▲ " if tone > 0 else "  ",
                     "bad" if tone < 0 else "good")
-            row.add(clean(article["headline"])[: max(10, width - 11)], "normal")
+            room = max(10, width - 11)
+            if news_kind(article) == "video":
+                row.add("▶ ", "accent")
+                room -= 2
+            row.add(clean(article["headline"])[:room], "normal")
+            row.news_ref = dict(article, team_abbr=team.get("abbr") or "")
             lines.append(row)
     return lines
 
@@ -10642,6 +10812,368 @@ def news_tone(article):
     if KIM_NEWS_GOOD.search(text):
         return 1
     return -1 if KIM_NEWS_HURT.search(text) else 0
+
+
+# --------------------------------------------------------------------------
+# the article card: a headline's whole story, read in the app
+# --------------------------------------------------------------------------
+#
+# Every item in an ESPN news feed links to ESPN's content API, which hands
+# back the story itself as HTML (or, for a video, the clip and its files).
+# sportst turns that HTML into wrapped, styled lines with the standard
+# library's HTML parser - paragraphs, headings, lists, quotes; pictures,
+# embedded players and scripts left out - so no text browser is needed.
+
+NEWS_KINDS = {"Media": "video", "HeadlineNews": "news", "Story": "story", "Recap": "recap",
+              "Preview": "preview", "Eticket": "interactive page", "Blog": "blog post",
+              "Podcast": "podcast"}
+CONTENT_HOST = "content.core.api.espn.com"
+
+
+def news_kind(article):
+    """What a feed item is: video, story, recap, preview, news ..."""
+    kind = str(article.get("type") or "")
+    api = str(dig(article, "links", "api", "self", "href", default="") or "")
+    if kind == "Media" or "/video/clips/" in api:
+        return "video"
+    return NEWS_KINDS.get(kind, "story")
+
+
+def article_api_url(article):
+    """The content API address for a feed item, always over https."""
+    api = str(dig(article, "links", "api", "self", "href", default="") or "")
+    if CONTENT_HOST in api:
+        return "https://" + api.split("://", 1)[-1]
+    ident = urllib.parse.quote(str(article.get("id") or ""))
+    if not ident:
+        return ""
+    if news_kind(article) == "video":
+        return f"https://{CONTENT_HOST}/v1/video/clips/{ident}"
+    return f"https://{CONTENT_HOST}/v1/sports/news/{ident}"
+
+
+def article_web_url(article, data=None):
+    """The item's page on espn.com, for the browser."""
+    for source in (data or {}, article):
+        for path in (("links", "web", "href"), ("headlines", 0, "links", "web", "href"),
+                     ("videos", 0, "links", "web", "href")):
+            href = dig(source, *path, default="")
+            if href:
+                return "https://" + str(href).split("://", 1)[-1]
+    return ""
+
+
+def _duration(seconds):
+    try:
+        seconds = int(seconds)
+    except (TypeError, ValueError):
+        return ""
+    return f"{seconds // 60}:{seconds % 60:02d}" if seconds > 0 else ""
+
+
+def article_video(data):
+    """(title, mp4 address, seconds) of the video an article is, or carries;
+    None when there is none."""
+    item = dig(data, "videos", 0, default=None) or \
+        dig(data, "headlines", 0, "video", 0, default=None)
+    if not isinstance(item, dict):
+        return None
+    source = dig(item, "links", "source", default={}) or {}
+    url = dig(source, "HD", "href", default="") or source.get("href") or \
+        dig(source, "full", "href", default="")
+    if not url:
+        return None
+    title = clean(item.get("headline") or item.get("title") or "")
+    return title, str(url), item.get("duration")
+
+
+class StoryParser(HTMLParser):
+    """ESPN story markup into blocks: (kind, [(text, style)]) with kind p,
+    h (heading), li (a list item; its number or bullet first), quote or
+    rule. Pictures, embedded players, scripts and styles are left out."""
+
+    BLOCK = {"p", "div", "section", "article", "h1", "h2", "h3", "h4", "h5", "h6", "hl2",
+             "li", "tr", "dt", "dd", "figcaption", "pre", "header", "footer", "table"}
+    HEADING = {"h1", "h2", "h3", "h4", "h5", "h6", "hl2"}
+    SKIP = {"script", "style", "noscript", "iframe", "svg", "button", "form", "select",
+            "template", "object", "video", "audio", "picture", "head"}
+    BOLD = {"b", "strong"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.blocks, self.spans, self.kind = [], [], "p"
+        self.skip = self.bold = self.quote = self.in_item = 0
+        self.lists = []
+
+    def flush(self):
+        if "".join(text for text, _ in self.spans).strip():
+            self.blocks.append((self.kind, self.spans))
+        self.spans = []
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if tag in self.SKIP:
+            self.skip += 1
+            return
+        if self.skip:
+            return
+        if tag in ("ul", "ol"):
+            self.flush()
+            self.lists.append([tag == "ol", 0])
+        elif tag == "blockquote":
+            self.flush()
+            self.quote += 1
+            self.kind = "quote"
+        elif tag == "hr":
+            self.flush()
+            self.blocks.append(("rule", []))
+        elif tag == "br":
+            self.spans.append(("\n", "normal"))
+        elif tag in ("td", "th"):
+            if "".join(text for text, _ in self.spans).strip():
+                self.spans.append(("  ·  ", "muted"))
+        elif tag == "li":
+            self.flush()
+            self.in_item += 1
+            self.kind = "li"
+            mark = "•"
+            if self.lists:
+                self.lists[-1][1] += 1
+                if self.lists[-1][0]:
+                    mark = f"{self.lists[-1][1]}."
+            self.spans.append((mark, "accent"))
+        elif tag in self.BLOCK and not (self.in_item and tag == "p"):
+            self.flush()
+            self.kind = "h" if tag in self.HEADING else ("quote" if self.quote else "p")
+        if tag in self.BOLD:
+            self.bold += 1
+
+    def handle_startendtag(self, tag, attrs):
+        if tag.lower() in ("br", "hr"):
+            self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag in self.SKIP:
+            self.skip = max(0, self.skip - 1)
+            return
+        if self.skip:
+            return
+        if tag in ("ul", "ol"):
+            self.flush()
+            if self.lists:
+                self.lists.pop()
+            self.kind = "quote" if self.quote else "p"
+        elif tag == "blockquote":
+            self.flush()
+            self.quote = max(0, self.quote - 1)
+            self.kind = "quote" if self.quote else "p"
+        elif tag == "li":
+            self.flush()
+            self.in_item = max(0, self.in_item - 1)
+            self.kind = "quote" if self.quote else "p"
+        elif tag in self.BLOCK and not (self.in_item and tag == "p"):
+            self.flush()
+            self.kind = "quote" if self.quote else "p"
+        if tag in self.BOLD:
+            self.bold = max(0, self.bold - 1)
+
+    def handle_data(self, data):
+        if self.skip or not data:
+            return
+        if self.kind == "h":
+            style = "title"
+        else:
+            style = "bold" if self.bold else "normal"
+        self.spans.append((data, style))
+
+    def close(self):
+        super().close()
+        self.flush()
+
+
+def story_blocks(markup):
+    """A story's HTML as blocks (see StoryParser). Recaps and previews come
+    as plain text, a blank line between paragraphs; a link ESPN left
+    unclosed (href="… with no quote) is mended so it cannot swallow the
+    rest."""
+    text = clean(markup).replace("\r", "")
+    if not re.search(r"<\s*(p|div|br|li|h\d|hl2|table|blockquote)\b", text, re.I):
+        text = "".join(f"<p>{part}</p>" for part in re.split(r"\n\s*\n", text))
+    text = re.sub(r'(<a\s+href="[^"<>\s]*)\s(?=[^"<>]*</a>)', r'\1">', text, flags=re.I)
+    parser = StoryParser()
+    try:
+        parser.feed(text)
+        parser.close()
+    except Exception:  # noqa: BLE001 - odd markup: keep what was read
+        parser.flush()
+    return parser.blocks[:2000]
+
+
+def wrap_styled(spans, width, indent="", hang=None):
+    """Word-wrap styled text into Lines, each word keeping its style. Text
+    that runs on from one span into the next with no space between (a
+    linked name, then 's) is one word and never split; "\\n" breaks the
+    line; `hang` indents the lines after the first."""
+    hang = indent if hang is None else hang
+    width = max(8, width)
+    words, current, spaced = [], None, False
+    for text, style in spans:
+        if text == "\n":
+            if current:
+                words.append(current)
+            words.append(None)
+            current, spaced = None, False
+            continue
+        for token in re.findall(r"\S+|\s+", text):
+            if token.isspace():
+                if current:
+                    words.append(current)
+                current, spaced = None, True
+            elif current is None:
+                current = (spaced, [(token, style)])
+                spaced = False
+            else:
+                current[1].append((token, style))
+    if current:
+        words.append(current)
+
+    def fresh_line():
+        return (Line().add(hang, "normal") if hang else Line()), len(hang)
+
+    lines = []
+    line, used = (Line().add(indent, "normal") if indent else Line()), len(indent)
+    empty = True
+    for word in words:
+        if word is None:
+            lines.append(line)
+            line, used = fresh_line()
+            empty = True
+            continue
+        gap, parts = word
+        length = sum(len(text) for text, _ in parts)
+        if not empty and used + length + (1 if gap else 0) > width:
+            lines.append(line)
+            line, used = fresh_line()
+            empty = True
+        if gap and not empty:
+            line.add(" ", parts[0][1])
+            used += 1
+        for text, style in parts:
+            while used + len(text) > width and width - used > 0 and \
+                    len(text) > width - len(hang):
+                cut = width - used          # a word wider than the page is cut
+                line.add(text[:cut], style)
+                lines.append(line)
+                line, used = fresh_line()
+                text = text[cut:]
+            line.add(text, style)
+            used += len(text)
+        empty = False
+    if not empty or not lines:
+        lines.append(line)
+    return lines
+
+
+def story_lines(blocks, width):
+    """Blocks from story_blocks laid out as the card shows them: a blank
+    line between paragraphs, list items bulleted with a hanging indent,
+    quotes behind a bar."""
+    lines, previous = [], None
+    for kind, spans in blocks:
+        if lines and not (kind == "li" and previous == "li"):
+            lines.append(blank())
+        if kind == "rule":
+            lines.append(Line().add("─" * min(width, 40), "border"))
+        elif kind == "h":
+            lines.extend(wrap_styled(spans, width))
+        elif kind == "li":
+            mark, rest = (spans[0][0], spans[1:]) if spans else ("•", [])
+            lead = f"  {mark} "
+            body = wrap_styled(rest, width, indent=" " * len(lead))
+            if body:
+                body[0][0] = (lead, "accent")
+            lines.extend(body)
+        elif kind == "quote":
+            for row in wrap_styled(spans, width - 2):
+                lines.append(Line([("│ ", "muted")] + [(t, "dim" if s == "normal" else s)
+                                                      for t, s in row]))
+        else:
+            lines.extend(wrap_styled(spans, width))
+        previous = kind
+    return lines
+
+
+def article_lines(ref, data, width, loading=False, error=None, video_window=False):
+    """What the article card shows: the headline, its byline and date, then
+    the story - or for a video its description and length - wrapped to
+    `width`; while it loads, or if it cannot, the summary from the feed."""
+    kind = news_kind(ref)
+    item = (dig(data, "headlines", 0, default=None) or dig(data, "videos", 0, default=None)
+            or {}) if isinstance(data, dict) else {}
+    lines = wrap_styled([(clean(item.get("headline") or ref.get("headline") or "?"),
+                          "title")], width)
+    meta = []
+    byline = clean(item.get("byline") or ref.get("byline") or "")
+    if byline:
+        meta.append(byline)
+    when = parse_iso(item.get("published") or item.get("originalPublishDate")
+                     or ref.get("published") or ref.get("lastModified"))
+    if when:
+        meta.append(when.astimezone().strftime("%a %b %-d, %Y · %-I:%M %p"))
+    premium = bool(item.get("premium") or ref.get("premium"))
+    meta.append("ESPN+ " + kind if premium else kind.capitalize())
+    video = article_video(data) if isinstance(data, dict) else None
+    if video and kind == "video" and _duration(video[2]):
+        meta.append(_duration(video[2]))
+    lines.extend(wrap_styled([(" · ".join(meta), "muted")], width))
+    lines.append(blank())
+    summary = clean(item.get("description") or ref.get("description") or "")
+    if summary.lower() == clean(item.get("headline") or ref.get("headline") or "").lower():
+        summary = ""                     # a clip's description is often its title again
+    if not item:
+        if summary:
+            lines.extend(wrap_styled([(summary, "normal")], width))
+            lines.append(blank())
+        if loading:
+            lines.append(Line().add("Loading the story…", "dim"))
+        else:
+            lines.extend(wrap_styled([(f"Could not load the story{': ' + error if error else ''}"
+                                       " - o opens it on espn.com.", "warn")], width))
+        return lines
+    sound = "in a window" if video_window else "sound only - Settings: Show the video"
+    if kind == "video" or "videos" in data:
+        if summary:
+            lines.extend(wrap_styled([(summary, "normal")], width))
+            lines.append(blank())
+        if video:
+            lines.extend(wrap_styled([("▶ ", "accent"), ("enter plays it with your clip "
+                                                       f"player ({sound}); o opens it on "
+                                                       "espn.com.", "dim")], width))
+        else:
+            lines.append(Line().add("This video has no file to play here - o opens it on "
+                                    "espn.com.", "dim"))
+        return lines
+    if video:
+        lines.extend(wrap_styled([("▶ ", "accent"), (f"This story has a video: "
+                                                   f"{video[0] or 'the clip'}"
+                                                   f"{' (' + _duration(video[2]) + ')' if _duration(video[2]) else ''}"
+                                                   " - enter plays it.", "dim")], width))
+        lines.append(blank())
+    body = story_lines(story_blocks(item.get("story") or ""), width)
+    if not body:
+        if summary:
+            lines.extend(wrap_styled([(summary, "normal")], width))
+            lines.append(blank())
+        lines.extend(wrap_styled([("ESPN sends no text for this one (an interactive page, "
+                                   "a gallery ...) - o opens it on espn.com.", "dim")], width))
+        return lines
+    lines.extend(body)
+    if premium:
+        lines.append(blank())
+        lines.extend(wrap_styled([("An ESPN+ story: if it stops short, the rest is on "
+                                   "espn.com for subscribers (o).", "muted")], width))
+    return lines
 
 
 def scouting_header(event, summary, league, width):
@@ -13007,7 +13539,9 @@ def info_scouting(league):
         ("Injuries", "every player on the injury report, grouped by status"),
         ("News", "the team's latest headlines (not the league roundups); 3h, 1d is how "
                  "long ago they were posted; ▼ bad news - ruled out, hurt - ▲ good news "
-                 "- back, activated"),
+                 "- back, activated; ▶ a video"),
+        ("n / N, enter", "pick a headline (it lights up), then read the whole story in "
+                         "the article card; a click picks one, a second click opens it"),
     ]
     if league == "ahl":
         team += [
@@ -13025,6 +13559,24 @@ def info_scouting(league):
                                 "leaders, injuries and news on the right.")]),
             ("Header", rows), ("The comparison", edges), ("Each team", team),
             ("Injury statuses", INFO_INJURY)]
+
+
+def info_article():
+    return [("The article card", [
+        _p("A headline from the Scouting tab, read in full: ESPN's content API sends "
+           "the story itself, and sportst lays it out here - paragraphs, headings, "
+           "lists and quotes; pictures, embedded players and ads are left out."),
+        ("Top line", "the byline (when there is one), when it was posted, and what it "
+                     "is: a story, news, a recap, a preview, a video"),
+        ("▶", "a video - or a story that carries one: enter plays it with your clip "
+              "player (mpv, ffplay or VLC; Settings: Play clips with, Show the video)"),
+        ("ESPN+", "a subscriber story: ESPN may send only its opening; o opens the rest "
+                  "on espn.com"),
+        ("Interactive", "a page built to run in a browser (bracketology, a gallery) has "
+                        "no text to show: o opens it"),
+        ("keys", "j / k a line, space or PgDn a page, G the end; o espn.com; n / N the "
+                 "next / previous headline; esc, Q, backspace or a click closes"),
+    ])]
 
 
 def info_boxscore(summary, league):
@@ -13599,6 +14151,8 @@ def info_sections(app):
     tab = app.tab_name
     league = app.league
     center = getattr(app, "center", None)
+    if getattr(app, "article", None):
+        return info_article()
     if center:
         if center.get("wiki"):
             return [("Event Center", [row for row in INFO_GAME_CENTER
@@ -13700,6 +14254,7 @@ def parse_teams(data):
                     "short": clean(team.get("shortDisplayName") or ""),
                     "location": clean(team.get("location") or ""),
                     "color": clean(team.get("color") or ""),
+                    "logo": str(dig(team, "logos", 0, "href", default="") or ""),
                 })
     out.sort(key=lambda t: t["name"].lower())
     return out
@@ -14422,6 +14977,18 @@ HELP_TEXT = [
     ("Y", "the whole game's highlights"),
     ("X", "stop the clip that is playing (any tab but Favorites)"),
     ("J / K", "scroll the Plays screen"),
+    ("", ""),
+    ("Scouting tab: news", ""),
+    ("n / N", "pick the next / previous headline (▶ marks a video)"),
+    ("enter", "read the picked headline's whole story in a card"),
+    ("esc", "let go of the picked headline"),
+    ("", ""),
+    ("The article card", ""),
+    ("j / k, space", "scroll a line / a page; PgDn / PgUp, Home / End, G too"),
+    ("o", "open the story on espn.com in your browser"),
+    ("enter", "play its video (a video, or a story with one); else close"),
+    ("n / N", "the next / previous headline, without closing"),
+    ("esc, Q", "close the card (so do backspace and a click)"),
     ("", ""),
     ("Baseball", ""),
     (", / .", "step back / forward through at-bats on the Plays screen"),
@@ -19508,8 +20075,15 @@ DATA_SOURCES = [
      {"nfl", "cfb", "nba", "cbb", "nhl", "mlb", "cbase"}),
     ("cdn.espn.com", "ESPN CDN", "standings fallback",
      {"nfl", "cfb", "nba", "cbb", "nhl", "mlb", "cbase"}),
+    ("content.core.api.espn.com", "ESPN content API",
+     "the whole story behind a Scouting headline, and the video behind a video one",
+     {"nfl", "cfb", "nba", "cbb", "nhl", "mlb", "cbase"}),
     ("a.espncdn.com", "ESPN images", "team logos",
      {"nfl", "cfb", "nba", "cbb", "nhl", "mlb", "cbase", "owg", "osg"}),
+    (WIKIMEDIA_HOST, "Wikimedia Commons",
+     "the caps' own marks of the college baseball programs that wear one (Arkansas's "
+     "A, LSU, Mississippi State's M-over-S ...), as their Wikipedia articles show them",
+     {"cbase"}),
     ("statsapi.mlb.com", "MLB Stats API",
      "Statcast pitch data, MLB team stats, the MLB bracket, every game's highlight "
      "clips", {"mlb"}),
@@ -20122,6 +20696,10 @@ class App:
         self._play_event, self._play_follow, self._play_focus = None, False, None
         self._clips_loading = False
         self.player = None          # the clip playing now
+        self.news_sel = {}          # event id -> the headline picked on Scouting
+        self._news_refs, self._news_event = [], None
+        self._news_follow, self._news_focus = False, None
+        self.article = None         # the article card, while open
         if args.date or args.week:
             self.tab = 1      # asked for a particular day or week: show it
         self.players_view = "season"     # or "game" (its last game), "schedule"
@@ -21503,7 +22081,9 @@ class App:
         for row in range(box_height):
             self.put(top + row, left, " " * box_width, self.palette("normal"))
         title = f"Info · {self.tab_name}"
-        if self.center:
+        if self.article:
+            title = "Info · the article card"
+        elif self.center:
             title = "Info · " + ("Event Center" if self.center.get("wiki") else "Game Center")
         elif self.tab_name == "Stats" and self.stats_team and self.stats_team[0] == self.league:
             title += " · players"
@@ -21683,12 +22263,15 @@ class App:
             except Exception:  # noqa: BLE001 - alerts are a nicety, never a crash
                 pass
         self.draw_footer(layout_width, height)
-        if self.show_help or self.show_info or self.calendar or self.popup or self.kim:
+        if self.show_help or self.show_info or self.calendar or self.popup or self.kim or \
+                self.article:
             self.hotspots, self.wheel_zones = [], []    # clicks go to the pop-up
         if self.show_help:
             self.draw_help(height, width)
         elif self.show_info:
             self.draw_info(height, width)
+        elif self.article:
+            self.draw_article(height, width)
         elif self.calendar:
             self.draw_calendar(height, width)
         elif self.popup:
@@ -21833,10 +22416,11 @@ class App:
         if title == "Scouting":
             event = self.current_event()
             if not event:
+                self._news_refs = []
                 self.draw_lines_box(top, height, width, "Scouting", [
                     Line().add("Pick a game on the Scoreboard tab first.", "dim")])
                 return
-            self.draw_two_panes(top, height, width, title, self.scouting_panes(event, width))
+            self.draw_scouting(top, height, width, event)
             return
         if title == "Stats" and self.stats_team and self.stats_team[0] == self.league:
             self.draw_team_players(top, height, width, self.stats_team[1])
@@ -23046,25 +23630,7 @@ class App:
             return
         self._play_follow = False
         self._play_focus = None
-        pane_index, line_index = focus
-        view = height - 2
-        if width < self.SPLIT_MIN_WIDTH and len(panes) > 1:
-            position = 0
-            for index, (_, body) in enumerate(panes):
-                if index:
-                    position += 1
-                position += 1
-                if index == pane_index:
-                    position += line_index
-                    break
-                position += len(body)
-            line_index = position
-        offset = self.scroll["Plays"]
-        if line_index < offset + 1:
-            offset = max(0, line_index - 2)
-        elif line_index >= offset + view - 1:
-            offset = line_index - view + 3
-        self.scroll["Plays"] = max(0, offset)
+        self.scroll_into_view(panes, height, width, "Plays", *focus)
 
     def player_status(self):
         if not self.player:
@@ -23190,6 +23756,268 @@ class App:
         self.decorate_plays(event, summary, panes, inner)
         self.follow_play(panes, height, width)
         self.draw_two_panes(top, height, width, "Plays", panes)
+
+    # -- headlines on the Scouting tab, and the article card ------------------
+
+    def decorate_news(self, event, panes, inner):
+        """Number the Scouting tab's headlines for n / N and enter, and
+        highlight the picked one (`panes` is changed in place). Returns where
+        each headline is, as (pane, line) pairs."""
+        found = []
+        for pane_index, (_, body) in enumerate(panes):
+            for line_index, line in enumerate(body):
+                ref = getattr(line, "news_ref", None)
+                if ref is not None:
+                    found.append((ref, pane_index, line_index))
+        self._news_event = event["id"]
+        self._news_refs = [ref for ref, _, _ in found]
+        spots = [(pane_index, line_index) for _, pane_index, line_index in found]
+        if found:
+            # the first News heading says how to open them
+            _, pane_index, line_index = found[0]
+            heading = panes[pane_index][1][line_index - 1] if line_index else None
+            hint = "  n / N pick a headline · enter reads it"
+            if heading is not None and heading.text.strip() == "News" and \
+                    len(heading.text) + len(hint) <= inner:
+                heading.add(hint, "muted")
+        chosen = self.news_sel.get(event["id"])
+        if chosen is None or not found:
+            self._news_follow = False
+            return spots
+        chosen = clamp(chosen, 0, len(found) - 1)
+        self.news_sel[event["id"]] = chosen
+        _, pane_index, line_index = found[chosen]
+        line = panes[pane_index][1][line_index]
+        line[:] = [(text, _on_cursor(style)) for text, style in line]
+        used = sum(len(text) for text, _ in line)
+        if used < inner:
+            line.append((" " * (inner - used), "sel"))
+        self._news_focus = (pane_index, line_index)
+        return spots
+
+    def draw_scouting(self, top, height, width, event):
+        """The Scouting tab: the two panes, the picked headline kept in view
+        once n / N picked it, and every headline clickable."""
+        panes = self.scouting_panes(event, width)
+        spots = self.decorate_news(event, panes, self.pane_width(width))
+        if self._news_follow and self._news_focus:
+            self._news_follow = False
+            self.scroll_into_view(panes, height, width, "Scouting", *self._news_focus)
+        self.draw_two_panes(top, height, width, "Scouting", panes)
+        for index, (pane_index, line_index) in enumerate(spots):
+            spot = self.pane_spot(panes, top, height, width, "Scouting", pane_index,
+                                  line_index)
+            if spot:
+                y, start, end = spot
+                self.hot(y, start, end, lambda i=index: self.click_headline(i),
+                         lambda i=index: self.click_headline(i, True))
+
+    def pane_position(self, panes, width, pane_index, line_index):
+        """Which row of the scrolled content a pane's line is: its own row
+        side by side, or counted down the stack on a narrow screen (a blank
+        and the title before each pane), as draw_two_panes lays them out."""
+        if width >= self.SPLIT_MIN_WIDTH or len(panes) < 2:
+            return line_index
+        position = 0
+        for index, (_, body) in enumerate(panes):
+            if index:
+                position += 1
+            position += 1
+            if index == pane_index:
+                return position + line_index
+            position += len(body)
+        return position
+
+    def pane_spot(self, panes, top, height, width, key, pane_index, line_index):
+        """(screen row, first column, end column) of a pane's line as drawn,
+        or None when it is scrolled out of view."""
+        row = self.pane_position(panes, width, pane_index, line_index) - self.scroll[key]
+        if not 0 <= row < height - 2:
+            return None
+        if width < self.SPLIT_MIN_WIDTH:
+            return top + 1 + row, 2, width - 2
+        left_width = width // 2
+        x, w = (0, left_width) if pane_index == 0 else (left_width, width - left_width)
+        return top + 1 + row, x + 2, x + w - 2
+
+    def scroll_into_view(self, panes, height, width, key, pane_index, line_index):
+        """Scroll two panes so a line of one is in view, with a line of
+        room around it."""
+        line_index = self.pane_position(panes, width, pane_index, line_index)
+        view = height - 2
+        offset = self.scroll[key]
+        if line_index < offset + 1:
+            offset = max(0, line_index - 2)
+        elif line_index >= offset + view - 1:
+            offset = line_index - view + 3
+        self.scroll[key] = max(0, offset)
+
+    def news_hint(self, ref):
+        kind = news_kind(ref)
+        mark = "▶" if kind == "video" else "›"
+        return f"{mark} {clean(ref.get('headline') or '')} · enter opens it"
+
+    def handle_scouting_key(self, key):
+        """n / N pick the next / previous headline on the Scouting tab, enter
+        opens the picked one in the article card (or, with none picked,
+        picks the first), esc lets go of it."""
+        event = self.current_event()
+        refs = self._news_refs if event and self._news_event == event["id"] else []
+        if not refs:
+            return False
+        current = self.news_sel.get(event["id"])
+        if key in (ord("n"), ord("N")):
+            step = 1 if key == ord("n") else -1
+            if current is None:
+                current = 0 if step > 0 else len(refs) - 1
+            else:
+                current = (current + step) % len(refs)
+            self.news_sel[event["id"]] = current
+            self._news_follow = True
+            self.status_message = self.news_hint(refs[min(current, len(refs) - 1)])
+            return True
+        if key in (10, 13, curses.KEY_ENTER):
+            if current is None:
+                self.news_sel[event["id"]] = 0
+                self._news_follow = True
+                self.status_message = self.news_hint(refs[0])
+                return True
+            current = min(current, len(refs) - 1)
+            self.open_article(refs[current], current)
+            return True
+        if key == 27 and current is not None:
+            self.news_sel.pop(event["id"], None)
+            return True
+        return False
+
+    def click_headline(self, index, open_it=False):
+        """A headline on the Scouting tab: the first click picks it, a click
+        on the picked one (or a double click) opens it."""
+        event = self.current_event()
+        if not event or not 0 <= index < len(self._news_refs):
+            return False
+        again = self.clicked_again("news", event["id"], index)
+        self.news_sel[event["id"]] = index
+        if again or open_it:
+            self.open_article(self._news_refs[index], index)
+            return True
+        self.status_message = self.news_hint(self._news_refs[index])
+        return False
+
+    def open_article(self, ref, index=None):
+        self.article = {"ref": ref, "league": self.league, "event": self._news_event,
+                        "index": index, "scroll": 0}
+        self.dirty = True
+
+    def article_data(self):
+        """The open card's story (or video) from ESPN's content API."""
+        url = article_api_url(self.article["ref"])
+        if not url:
+            return Result(None, "no link to the story", False, 0.0)
+        result = self.fetcher.get(("article", url), url, ttl=3600)
+        if result.data is None and result.error and not result.loading:
+            # a story that failed is asked for again a minute later, not an hour
+            result = self.fetcher.get(("article", url), url, ttl=60)
+        return result
+
+    def article_step(self, step):
+        """The next / previous headline, opened in the card in place."""
+        art = self.article
+        refs = self._news_refs if self._news_event == art.get("event") else []
+        if not refs or art.get("index") is None:
+            self.status_message = "Only this one - close the card to pick another."
+            return
+        index = (art["index"] + step) % len(refs)
+        if art.get("event"):
+            self.news_sel[art["event"]] = index
+        self._news_follow = True
+        self.open_article(refs[index], index)
+        self.article["event"] = art.get("event")
+
+    def draw_article(self, height, width):
+        """The article card: the whole story, scrolled with j / k."""
+        art = self.article
+        box_width = clamp(width - 4, 40, 100)
+        inner = box_width - 6
+        result = self.article_data()
+        stamp = (id(result.data), inner, result.loading, result.error,
+                 bool(self.config.get("clip_video", False)))
+        if art.get("_stamp") != stamp:
+            art["_stamp"] = stamp
+            art["_lines"] = article_lines(art["ref"], result.data, inner,
+                                          loading=result.loading, error=result.error,
+                                          video_window=stamp[-1])
+            art["_video"] = article_video(result.data) if result.data else None
+            art["_web"] = article_web_url(art["ref"], result.data)
+        lines = art["_lines"]
+        # as tall as the story, up to the whole screen; a short one is a card
+        box_height = clamp(len(lines) + 4, min(14, height - 2), max(8, height - 4))
+        top = (height - box_height) // 2
+        left = (width - box_width) // 2
+        view = box_height - 4
+        art["_view"] = view
+        art["scroll"] = clamp(art["scroll"], 0, max(0, len(lines) - view))
+        for row in range(box_height):
+            self.put(top + row, left, " " * box_width, self.palette("normal"))
+        team = art["ref"].get("team_abbr") or ""
+        title = f"{team} news" if team else "News"
+        refs = self._news_refs if self._news_event == art.get("event") else []
+        if refs and art.get("index") is not None:
+            title += f" · {art['index'] + 1} of {len(refs)}"
+        self.draw_box(top, left, box_height, box_width, title, "title")
+        self.draw_lines(lines, top + 1, left + 3, view, inner, art["scroll"])
+        self.draw_scrollbar(top + 1, left + box_width - 2, view, len(lines), art["scroll"])
+        parts = ["j / k scroll", "space a page"]
+        if art.get("_web"):
+            parts.append("o espn.com")
+        if art.get("_video"):
+            parts.append("enter plays the video")
+        if len(refs) > 1:
+            parts.append("n / N next headline")
+        parts.append("esc closes")
+        hint = " · ".join(parts)
+        if len(hint) > inner:
+            hint = " · ".join(p for p in parts if p != "space a page")
+        self.put(top + box_height - 2, left + 3, hint[:inner], self.palette("muted"))
+
+    def handle_article_key(self, key):
+        """Keys while the article card is open: j / k and the page keys
+        scroll; o opens the page in the browser; enter plays the video;
+        n / N go to the next / previous headline; esc or q closes."""
+        art = self.article
+        view = max(1, art.get("_view", 10) - 1)
+        steps = {ord("j"): 1, curses.KEY_DOWN: 1, ord("k"): -1, curses.KEY_UP: -1,
+                 curses.KEY_NPAGE: view, ord(" "): view, ord("J"): view,
+                 curses.KEY_PPAGE: -view, ord("K"): -view,
+                 curses.KEY_HOME: -10 ** 6, ord("g"): -10 ** 6,
+                 curses.KEY_END: 10 ** 6, ord("G"): 10 ** 6}
+        if key == curses.KEY_RESIZE:
+            self.apply_background()
+        elif key in steps:
+            art["scroll"] = max(0, art.get("scroll", 0) + steps[key])
+        elif key in (ord("o"), ord("O")):
+            web = art.get("_web") or article_web_url(art["ref"])
+            if not web:
+                self.status_message = "No page on espn.com for this one."
+            elif open_in_browser(web):
+                self.status_message = f"↗ Opening in your browser: {web}"
+            else:
+                self.status_message = f"⚠ No browser found to open {web}"
+        elif key in (10, 13, curses.KEY_ENTER):
+            video = art.get("_video")
+            if video:
+                title, url, _ = video
+                self.play_clip({"title": title or clean(art["ref"].get("headline") or ""),
+                                "url": url, "kind": "audio", "source": "ESPN"})
+            else:
+                self.article = None
+        elif key in (ord("n"), ord("N")):
+            self.article_step(1 if key == ord("n") else -1)
+        elif key == ord("x") and self.player:
+            self.stop_clip()
+        elif key in (27, ord("q"), curses.KEY_BACKSPACE, 127, 8):
+            self.article = None
+        return True
 
     # -- the Playoffs tab: bracket (or picture) and championship odds --------
 
@@ -23771,7 +24599,7 @@ class App:
         down = state & getattr(curses, "BUTTON5_PRESSED", 0)
         if up or down:
             if not (self.popup or self.calendar or self.kim or self.center or
-                    self.show_info or self.show_help):
+                    self.show_info or self.show_help or self.article):
                 for top, bottom, left, right, down_key, up_key, times in \
                         reversed(self.wheel_zones):
                     if top <= y < bottom and left <= x < right:
@@ -23780,7 +24608,7 @@ class App:
                         return True
             if self.popup or self.calendar or self.center:
                 times = 1
-            elif self.show_info or self.show_help or self.kim:
+            elif self.show_info or self.show_help or self.kim or self.article:
                 times = 3
             elif self.tab_name == "Stats" and self.stats_team and \
                     self.players_view != "schedule":
@@ -23804,6 +24632,9 @@ class App:
             return True     # the second half of a double click that already opened
         if self.show_help or self.show_info:
             return self.handle_key(27)
+        if self.article:
+            self.article = None          # a click closes the article card
+            return True
         if self.kim:
             return self.handle_kim_key(10)
         for row, start, end, action, activate in reversed(self.hotspots):
@@ -25132,6 +25963,17 @@ class App:
         grouped = not is_olympic(league)
         if self.show_help or self.show_info:
             return [("j/k", "scroll"), ("esc", "close")]
+        if self.article:
+            hints = [("j/k", "scroll"), ("space", "page")]
+            if self.article.get("_web"):
+                hints += [("o", "espn.com")]
+            if self.article.get("_video"):
+                hints += [("enter", "play the video")]
+            if len(self._news_refs) > 1:
+                hints += [("n/N", "next headline")]
+            if self.player:
+                hints += [("x", "stop")]
+            return hints + [("esc", "close")]
         if self.calendar:
             return [("←→↑↓", "day / week"), ("[ ]", "month"), ("n/N", "game day"),
                     ("f", "your team"), ("t", "today"), ("enter", "go"), ("esc", "close")]
@@ -25194,8 +26036,14 @@ class App:
                 step = "Games"
             else:
                 step = "week" if self.week_mode and LEAGUES[league]["week_based"] else "day"
-            return [("j/k", "scroll"), ("z", "game center"), ("1", "games"),
-                    ("h/l", step), ("tab", "next tab"), ("p", "league")] + tail
+            event = self.current_event()
+            news = []
+            if self._news_refs and event and self._news_event == event["id"]:
+                picked = self.news_sel.get(event["id"]) is not None
+                news = [("n/N", "headline"), ("enter", "read it" if picked else "pick one")]
+            return [("j/k", "scroll")] + news + [("z", "game center"), ("1", "games"),
+                                                 ("h/l", step), ("tab", "next tab"),
+                                                 ("p", "league")] + tail
         if tab in ("Boxscore", "Game Stats"):
             return [("j/k", "scroll"), ("z", "game center"), ("PgDn", "page"),
                     ("1", "games"), ("tab", "next tab"), ("r", "refresh")] + tail
@@ -25661,6 +26509,13 @@ class App:
             else:
                 self.show_info = False
             return True
+        if self.article:
+            if key in (ord("?"), ord("i")):
+                self.show_help, self.help_scroll = key == ord("?"), 0
+                self.show_info, self.info_scroll = key == ord("i"), 0
+                self._help_fits = self._info_fits = False
+                return True
+            return self.handle_article_key(key)
         if self.center:
             return self.handle_center_key(key)
         if self.kim:
@@ -25694,6 +26549,8 @@ class App:
         if self.tab_name == "Overview" and self.handle_overview_key(key):
             return True
         if self.tab_name == "Plays" and self.handle_plays_key(key):
+            return True
+        if self.tab_name == "Scouting" and self.handle_scouting_key(key):
             return True
         if key == ord("x") and self.player and self.tab_name != "Favorites":
             self.stop_clip()
