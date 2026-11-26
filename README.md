@@ -252,7 +252,7 @@ Other terminal windows that were already open need to be closed and opened again
 ### Step 5 - Check it and run it
 
 ```
-sportst --version               # sportst 7.0.0
+sportst --version               # sportst 7.1.0
 sportst --scores -L nba         # plain text: a quick network check
 sportst                         # the app
 ```
@@ -311,7 +311,7 @@ Since 7.0.0 sportst runs on Windows itself. Python on Windows has no curses modu
 
 ```
 cd $HOME\sportst
-py sportst --version            # sportst 7.0.0
+py sportst --version            # sportst 7.1.0
 py sportst --scores -L nba      # plain text: a quick network check
 py sportst                      # the app; Q quits
 ```
@@ -332,7 +332,7 @@ For the full picture on Windows, run the Linux version in WSL 2 with Kitty: in P
 cp /mnt/c/Users/YOUR-WINDOWS-NAME/Downloads/sportst ~/
 ```
 
-### Upgrading from an earlier version (for example 6.22.0 to 7.0.0)
+### Upgrading from an earlier version (for example 7.0.0 to 7.1.0)
 
 Your settings and favorites live in ~/.config/sportst and are not touched by an upgrade, so this only swaps the program file. (6.15.0 changed the look a new install starts with - the Retro NBC Sports scheme on ink, logos in blocks, CRT mode on in colour; a config.json that sportst wrote keeps every setting it had, and one written by hand gets the new defaults only for what it leaves out.)
 
@@ -373,12 +373,12 @@ chmod +x ~/.local/bin/sportst
 6. Check it:
 
 ```
-sportst --version               # sportst 7.0.0
+sportst --version               # sportst 7.1.0
 sudo apt install mpv            # optional: hear clips in the terminal
 sportst                         # O for Settings: enter opens a group's card
 ```
 
-7. Optional: clear the cache. Nothing in 7.0.0 needs it - what it adds, the four new leagues included, is read live while it runs - but it is safe: logos, photos and Olympic pages are simply fetched again:
+7. Optional: clear the cache. Nothing in 7.1.0 needs it - it changes only how hockey's goal card on the Plays tab is laid out - but it is safe: logos, photos and Olympic pages are simply fetched again:
 
 ```
 rm -rf ~/.cache/sportst
@@ -672,7 +672,7 @@ Baseball (since 6.19.0) as well. Under the team stats: runs **by inning** with R
 
 ### Plays (5)
 
-One line at the top for the score, status, venue, crowd and weather, then two panes. Since 6.19.0 every part of both panes sits in a titled box of its own, as on the Game Stats tab - THE GAME, GAME FLOW, SCORING, GAME HIGHLIGHTS and WIN PROBABILITY beside DRIVES, BIGGEST SWINGS and OFFICIALS in football; AT THE PLATE, THIS AT-BAT and RECENT PLAYS beside STRIKE ZONE, ON THE BASES, SCORING PLAYS, BIGGEST SWINGS and WIN PROBABILITY in baseball; and so on in every sport - while picking plays, the clips, J / K, the wheel and clicks work as before. Football: the **game's flow** (since 6.17.0: the margin through the game in braille, the home team's lead above the line in its colours and the visitor's below, each quarter marked, the lead changes and ties under it), every score on one line each (quarter, clock, team, kind, score, what happened) and the win-probability chart on the left; every drive (quarter, team, result, plays, yards, time, start), the **biggest swings** - the plays after which ESPN's win probability moved most, who gained and by how much, the quarter and clock and the play - and the officials on the right. j / k pick a score and **its drive** fills the bottom of the screen, as tall as the drive: each play a row on the field (as the Game Center's drive chart draws it, the away team's end zone on the left), from where it began to where it ended in the offense's colours, ▶ / ◀ the way it went, a loss in grey, an incompletion, no gain or a kick a dot; the down and distance before it, the yards and what happened after it, the score itself in bold; the title says how the drive ended, when, the score after it and its plays, yards and time. Enter plays the score's clip, esc lets go. Hockey (NHL, AHL, Olympic): goals one line each with their strength and assists, and the three stars, on the left; shots on goal by period, penalties and officials on the right. In the NHL and the AHL, with no goal picked, the room under the lists holds two boxes side by side: the **shot map** - the rink from above with every shot on goal and goal of the game in the shooting team's colour - and the **game flow**, each team's running count of shot attempts across the game in braille in its own colours, with every goal marked under the minute it came (the AHL's play by play has shots on goal only, so its chart counts those). On a narrow or short screen they follow the lists instead: J / K scroll down to them. j / k pick a goal and its card fills the bottom: the rink with the goal ringed (◉) among the game's shots, when it came and the score after it, what it did (opened the scoring, tied it, put them ahead, the game-winner), the scorer and his goals this season, the assists, the shot's type and distance, the strength and the goalie it beat, and under it, with the room, the game flow with ◉ at this goal; esc lets go. Baseball gets the pitch-by-pitch screen (section 10) with the game's scoring plays under the strike zone, then (since 6.19.0) its **biggest swings** - the plays that moved ESPN's win probability most, with the half-inning - and the **win probability** chart; basketball gets the scoring plays and the shot chart (section 11), with the game's flow and its biggest runs over the scoring plays.
+One line at the top for the score, status, venue, crowd and weather, then two panes. Since 6.19.0 every part of both panes sits in a titled box of its own, as on the Game Stats tab - THE GAME, GAME FLOW, SCORING, GAME HIGHLIGHTS and WIN PROBABILITY beside DRIVES, BIGGEST SWINGS and OFFICIALS in football; AT THE PLATE, THIS AT-BAT and RECENT PLAYS beside STRIKE ZONE, ON THE BASES, SCORING PLAYS, BIGGEST SWINGS and WIN PROBABILITY in baseball; and so on in every sport - while picking plays, the clips, J / K, the wheel and clicks work as before. Football: the **game's flow** (since 6.17.0: the margin through the game in braille, the home team's lead above the line in its colours and the visitor's below, each quarter marked, the lead changes and ties under it), every score on one line each (quarter, clock, team, kind, score, what happened) and the win-probability chart on the left; every drive (quarter, team, result, plays, yards, time, start), the **biggest swings** - the plays after which ESPN's win probability moved most, who gained and by how much, the quarter and clock and the play - and the officials on the right. j / k pick a score and **its drive** fills the bottom of the screen, as tall as the drive: each play a row on the field (as the Game Center's drive chart draws it, the away team's end zone on the left), from where it began to where it ended in the offense's colours, ▶ / ◀ the way it went, a loss in grey, an incompletion, no gain or a kick a dot; the down and distance before it, the yards and what happened after it, the score itself in bold; the title says how the drive ended, when, the score after it and its plays, yards and time. Enter plays the score's clip, esc lets go. Hockey (NHL, AHL, Olympic): goals one line each with their strength and assists, and the three stars, on the left; shots on goal by period, penalties and officials on the right. In the NHL and the AHL, with no goal picked, the room under the lists holds two boxes side by side: the **shot map** - the rink from above with every shot on goal and goal of the game in the shooting team's colour - and the **game flow**, each team's running count of shot attempts across the game in braille in its own colours, with every goal marked under the minute it came (the AHL's play by play has shots on goal only, so its chart counts those). On a narrow or short screen they follow the lists instead: J / K scroll down to them. j / k pick a goal and its card fills the bottom, each part in a titled box of its own (since 7.1.0): **WHERE IT CAME FROM** - the rink with the goal ringed (◉) among the game's shots, and a key to which way each team shoots; **THE GOAL** - a row each for WHEN, the SCORE after it and what it did (opened the scoring, tied it, put them ahead, the game-winner), the SCORER and his goals this season, the ASSISTS, the SHOT's type, distance and strength, and the GOALIE it beat, with the scorer's photo beside them in Kitty and Ghostty; and **GAME FLOW** with ◉ at this goal - under THE GOAL where it fits, beside it on a wide card that is short. The card's keys are in its bottom border; esc lets go. Baseball gets the pitch-by-pitch screen (section 10) with the game's scoring plays under the strike zone, then (since 6.19.0) its **biggest swings** - the plays that moved ESPN's win probability most, with the half-inning - and the **win probability** chart; basketball gets the scoring plays and the shot chart (section 11), with the game's flow and its biggest runs over the scoring plays.
 
 Since 7.0.0 hockey's **shot map** and the Game Center's shots on goal are drawn on a real rink in Kitty and Ghostty - the boards rounded at the corners, the red and blue lines, the faceoff circles and dots, the goal creases in blue, every shot a dot and every goal a ring in its team's colours - and the **game flow** is a line chart, each team's running count of shot attempts a smooth line over its shaded area in its colours, every goal a ringed dot on its line. In other terminals both are drawn in text as before.
 

@@ -752,7 +752,7 @@ def strf(moment, fmt):
     return moment.strftime(fmt if NOPAD == "%-" else fmt.replace("%-", NOPAD))
 
 APP = "sportst"
-VERSION = "7.0.0"
+VERSION = "7.1.0"
 
 CONFIG_DIR = os.path.join(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), APP
@@ -22703,24 +22703,28 @@ def _info_plays(league):
                                   "line chart drawn as a picture, each line over a fill "
                                   "that fades to the floor"),
                 ]), ("The goal's card (NHL, AHL)", [
-                    _p("j / k pick a goal and its card fills the bottom of the screen; "
-                       "esc lets go."),
-                    ("◉", "where the picked goal came from, on the rink with the game's "
-                          "other shots (•) and goals (●); the away team shoots at the "
-                          "left net"),
-                    ("1st Period 5:26", "when it came, and the score after it"),
-                    ("opened the scoring", "what it did: tied the game, put them ahead, "
-                                           "made it a one-goal game, the game-winner"),
-                    ("his 7th goal", "the scorer's goals this season, this one included; "
-                                     "the assists with theirs (the NHL's)"),
-                    ("from 22 ft", "the shot's distance from the net it went in, from "
-                                   "where the play by play put it; then its type and "
-                                   "the strength (even, power play, short-handed, empty "
-                                   "net)"),
-                    ("past", "the goalie it beat: the one in net for that team's last "
-                             "saved shot before it"),
-                    ("Game flow", "under the card when it has room: the game's flow with "
-                                  "◉ on the goals row at this goal"),
+                    _p("j / k pick a goal and its card fills the bottom of the screen, "
+                       "each part in a box of its own (since 7.1.0); esc lets go. The "
+                       "card's keys are in its bottom border."),
+                    ("WHERE IT CAME FROM", "the rink: ◉ the picked goal among the game's "
+                                           "other shots (•) and goals (●); the key under "
+                                           "it says which way each team shoots (the away "
+                                           "team at the left net)"),
+                    ("WHEN", "the period and the clock"),
+                    ("SCORE", "the score after it, and what it did: opened the scoring, "
+                              "tied the game, put them ahead, made it a one-goal game, "
+                              "the game-winner"),
+                    ("SCORER", "his goals this season, this one included (in brackets on "
+                               "a narrow card)"),
+                    ("ASSISTS", "with theirs this season (the NHL's)"),
+                    ("SHOT", "its type, its distance from the net it went in (from where "
+                             "the play by play put it) and the strength: even, power "
+                             "play, short-handed, empty net"),
+                    ("GOALIE", "the goalie it beat: the one in net for that team's last "
+                               "saved shot before it"),
+                    ("GAME FLOW", "the game's flow with ◉ on the goals row at this goal: "
+                                  "under THE GOAL where it fits, beside it on a wide card "
+                                  "that is short"),
                 ])] if league in ("nhl", "ahl") else [])
     if sport == "basketball":
         return [("This screen", head + [_p("The game's flow, its biggest runs and "
@@ -33555,17 +33559,36 @@ def hockey_shot_map(summary, event, league, width, focus=None):
     cols = max(30, min(width, 76))
     lines = [heading("Shot map")]
     lines.extend(rink_lines(shots + ([focus] if focus else []), event, league, cols))
-    legend = Line()
-    away, home = event["away"], event["home"]
-    legend.add("← ", "muted").add(away["abbr"], THEME.style(league, away, bold=True,
-                                                            fallback="accent"))
-    legend.add(" shoots left   ", "muted")
-    legend.add(home["abbr"], THEME.style(league, home, bold=True, fallback="accent"))
-    legend.add(" shoots right →   ", "muted").add("• shot  ● goal", "dim")
-    if focus:
-        legend.add("  ◉ this goal", "warn")
-    lines.append(fit_line(legend, width))
+    lines.extend(rink_key(event, league, width, bool(focus), split=False))
     return lines
+
+
+def rink_key(event, league, width, focus=False, split=True):
+    """The key under a rink: which way each team shoots, then • shot ● goal
+    (and ◉ this goal); on two rows where one is too narrow and `split`."""
+    away, home = event["away"], event["home"]
+
+    def sides_line(left, right, gap):
+        line = Line().add("← ", "muted").add(away["abbr"], THEME.style(
+            league, away, bold=True, fallback="accent"))
+        line.add(f"{left}{gap}", "muted")
+        line.add(home["abbr"], THEME.style(league, home, bold=True, fallback="accent"))
+        return line.add(f"{right} →", "muted")
+
+    def marks_line(gap):
+        line = Line().add(f"• shot{gap}● goal", "dim")
+        return line.add(f"{gap}◉ this goal", "warn") if focus else line
+    sides, marks = sides_line(" shoots left", " shoots right", "   "), marks_line("  ")
+    if not split or len(sides.text) + 3 + len(marks.text) <= width:
+        return [fit_line(Line(sides).add("   ", "normal").extend_spans(marks), width)]
+    # two rows, each in the shortest words that still fit
+    for short in (sides_line(" shoots", " shoots", "   "), sides_line("", "", "   ")):
+        if len(sides.text) <= width:
+            break
+        sides = short
+    if len(marks.text) > width:
+        marks = marks_line(" ")
+    return [fit_line(sides, width), fit_line(marks, width)]
 
 
 def hockey_stats_left(summary, event, league, width):
@@ -33718,59 +33741,89 @@ def goal_details(play, summary, event):
             "score": (away_score, home_score)}
 
 
-def goal_card_text(play, summary, event, league, width, rows, clip=None):
-    """The words beside the rink on the Plays tab's card for a goal."""
+GOAL_LABEL_W = 9        # the goal card's labels: WHEN, SCORE, SCORER, ASSISTS ...
+
+
+def goal_card_keys(clip=None):
+    """The keys of the Plays tab's goal card, as one line of text."""
+    keys = "j / k the next goal · esc lets go"
+    if clip:
+        keys = ("enter plays its clip" if clip.get("kind") == "audio" else
+                "enter opens its clip") + " · " + keys
+    return keys
+
+
+def goal_card_text(play, summary, event, league, width, rows, clip=None, hints=True):
+    """The words of the Plays tab's card for a goal, a label a row (since
+    7.1.0): WHEN, SCORE (and what it did), SCORER (and his goals this
+    season), ASSISTS, SHOT (type, distance, strength) and GOALIE; with
+    `hints` the keys under them."""
     info = goal_details(play, summary, event)
     side = info["side"]
     team = event[side] if side else {}
     team_style = THEME.style(league, team, bold=True, fallback="accent") if side else "accent"
+    label_w = GOAL_LABEL_W if width >= GOAL_LABEL_W + 16 else 0
+    lines = []
+
+    def row(label, spans, *more):
+        """The label, then `spans`; each of `more` (spans) after them where it
+        fits, else on a row of its own under the value."""
+        line = Line().add(f"{label:<{label_w}}" if label_w else "", "muted")
+        lines.append(line.extend_spans(spans))
+        for extra in more:
+            if len(lines[-1].text) + sum(len(t) for t, _ in extra) <= width:
+                lines[-1].extend_spans(extra)
+            else:
+                lines.append(Line().add(" " * label_w, "normal").extend_spans(
+                    [(t.lstrip(), s) if i == 0 else (t, s) for i, (t, s) in enumerate(extra)]))
+
+    def wrapped(label, text, style):
+        """A long value word-wrapped under itself."""
+        for index, piece in enumerate(wrap_spans(text, max(8, width - label_w), style)):
+            lead = f"{label:<{label_w}}" if index == 0 else " " * label_w
+            lines.append(Line().add(lead if label_w else "", "muted").extend_spans(piece))
+
     number = dig(play, "period", "number", default=0)
     clock = clean(dig(play, "clock", "displayValue", default="") or "")
-    lines = []
-    head = Line().add(f"{hockey_period_name(number, league)}  {clock}", "muted")
+    row("WHEN", [(f"{hockey_period_name(number, league)}  {clock}".strip(), "normal")])
+    when = lines.pop()          # first to go on a short card: the title has it too
     away, home = event["away"], event["home"]
-    head.add("   ", "normal").add(away["abbr"], THEME.style(league, away, bold=True,
-                                                            fallback="accent"))
-    head.add(f" {info['score'][0]}-{info['score'][1]} ", "bold")
-    head.add(home["abbr"], THEME.style(league, home, bold=True, fallback="accent"))
-    if info["meaning"] and len(head.text) + 3 + len(info["meaning"]) <= width:
-        head.add(f"   {info['meaning']}", "warn")
-        lines.append(head)
-    elif info["meaning"]:
-        lines.extend([head, Line().add(info["meaning"], "warn")])
-    else:
-        lines.append(head)
+    score = [(away["abbr"], THEME.style(league, away, bold=True, fallback="accent")),
+             (f" {info['score'][0]}-{info['score'][1]} ", "bold"),
+             (home["abbr"], THEME.style(league, home, bold=True, fallback="accent"))]
+    row("SCORE", score, *([[(f"   {info['meaning']}", "warn")]] if info["meaning"] else []))
     scorer = info["scorer"] or {"name": "?", "count": None}
-    line = Line().add(scorer["name"], team_style)
-    if scorer.get("count") not in (None, "", 0, "0"):
-        note = f"his {ordinal_word(scorer['count'])} goal of the season"
-        if len(line.text) + 2 + len(note) <= width:
-            line.add(f"  {note}", "muted")
-        else:
-            lines.append(line)
-            line = Line().add(note, "muted")
-    lines.append(line)
+    name = [(scorer["name"], team_style)]
+    if scorer.get("count") in (None, "", 0, "0"):
+        row("SCORER", name)
+    else:
+        note = f"  his {ordinal_word(scorer['count'])} goal of the season"
+        if label_w + len(scorer["name"]) + len(note) <= width:
+            row("SCORER", name + [(note, "muted")])
+        else:       # on a narrow card his goals in brackets, as the assists have theirs
+            row("SCORER", name, [(f" ({scorer['count']})", "muted")])
     if info["helpers"]:
         names = ", ".join(f"{h['name']}" + (f" ({h['count']})" if h.get("count") not in
                                             (None, "") else "") for h in info["helpers"])
-        lines.extend(wrap_spans(f"assists: {names}", width, "normal"))
+        wrapped("ASSISTS", names, "normal")
     else:
-        lines.append(Line().add("unassisted", "normal"))
+        row("ASSISTS", [("unassisted", "dim")])
     how = []
     if info["shot"]:
         how.append(info["shot"].lower())
     if info["distance"] is not None:
         how.append(f"from {info['distance']} ft")
     how.append(info["how"])
-    lines.extend(wrap_spans(" · ".join(how), width, "bold"))
+    wrapped("SHOT", " · ".join(how), "bold")
     if info["how"] == "empty net":
-        lines.append(Line().add("into an empty net", "dim"))
+        row("GOALIE", [("none - into an empty net", "dim")])
     elif info["goalie"]:
-        lines.append(Line().add("past ", "dim").add(info["goalie"], "normal"))
-    if clip:
-        what = "plays its clip" if clip.get("kind") == "audio" else "opens its clip"
-        lines.append(Line().add(f"enter {what}", "muted"))
-    lines.append(Line().add("j / k the next goal · esc lets go", "muted"))
+        row("GOALIE", [(info["goalie"], "normal")])
+    if len(lines) < rows:
+        lines.insert(0, when)
+    if hints:
+        lines.append(blank())
+        lines.extend(wrap_spans(goal_card_keys(clip), width, "muted"))
     return [fit_line(line, width) for line in lines[:rows]]
 
 
@@ -45705,9 +45758,22 @@ class App:
             return min(free, 24)
         return 0
 
+    def draw_section(self, top, left, height, width, title, note=""):
+        """A titled box inside a section, in the style of the Plays tab's other
+        boxes (plays_sections): the title upper case, a note after it."""
+        self.draw_box(top, left, height, width, title.upper(), "title")
+        if note and width > len(title) + 12:
+            room = width - len(title) - 8
+            self.put(top, left + 4 + len(title), f" {note[:room]} ", self.palette("muted"))
+
     def draw_goal_card(self, top, height, width, event, summary):
+        """The picked goal's card along the bottom of hockey's Plays tab, its
+        parts in boxes of their own (7.1.0): WHERE IT CAME FROM - the rink
+        with the game's shots, this goal ringed, and its key; THE GOAL - when,
+        the score, the scorer, the assists, the shot and the goalie, beside
+        the scorer's photo; and with the room under it GAME FLOW with this
+        goal ringed. The keys sit in the card's bottom border."""
         league = self.league
-        inner_w, inner_h = width - 4, height - 2
         refs = self._play_refs
         chosen = self.play_sel.get(event["id"])
         if chosen is None or not refs:
@@ -45721,47 +45787,95 @@ class App:
         if side:
             title += f" · {event[side]['abbr']}"
         self.draw_box(top, 0, height, width, title, "accent")
-        rink_cols = max(24, min(inner_w * 2 // 5, int(inner_h * 400 / 85)))
+        clip = self._play_clips.get(chosen)
+        keys = goal_card_keys(clip)
+        keys_below = len(keys) + 8 <= width
+        if keys_below:
+            self.put(top + height - 1, width - len(keys) - 4, f" {keys} ",
+                     self.palette("muted"))
+        x, y, room_w, room_h = 2, top + 1, width - 4, height - 2
+        # WHERE IT CAME FROM: as wide as the rink, which is as tall as the room
+        # under the box's borders and the key lets it (about a fifth as tall as
+        # it is wide), and no wider than two fifths of the card
         focus = goal_focus(play, summary, event)
         shots = hockey_shots(summary, event)
-        rink = rink_lines(shots + ([focus] if focus else []), event, league, rink_cols) \
-            if shots or focus else []
-        rink = rink[:inner_h]
-        if rink:
-            self.draw_lines(rink, top + 1, 2, inner_h, rink_cols, 0)
-        text_x = 2 + (rink_cols + 4 if rink else 0)
-        text_w = width - 2 - text_x
-        art_rows, art_w = 0, 0
+        map_w = 0
+        if (shots or focus) and room_w >= 64 and room_h >= 8:
+            most, key_rows = room_w * 2 // 5 - 4, 1
+            for _ in range(2):          # the key takes a second row on a narrow rink
+                rink_cols = min(most, int((room_h - 2 - key_rows) / 0.2125))
+                key = rink_key(event, league, rink_cols, bool(focus))
+                if len(key) == key_rows:
+                    break
+                key_rows = len(key)
+            if rink_cols >= 24:
+                rink = rink_lines(shots + ([focus] if focus else []), event, league,
+                                  rink_cols)[: room_h - 2 - len(key)]
+                map_w = rink_cols + 4
+                self.draw_section(y, x, room_h, map_w, "Where it came from")
+                body = rink + key
+                pad = max(0, (room_h - 2 - len(body)) // 2)
+                self.draw_lines(body, y + 1 + pad, x + 2, room_h - 2 - pad, rink_cols, 0)
+        if map_w:
+            x, room_w = x + map_w + 1, room_w - map_w - 1
+        # THE GOAL: the words, the scorer's photo on the right of them
+        png, art_w, art_rows = None, 0, 0
         photo, ident = "", ""
         for part in play.get("participants") or []:
             if isinstance(part, dict) and part.get("type") == "scorer":
                 photo = clean(dig(part, "athlete", "headshot", "href", default="") or "")
                 ident = str(dig(part, "athlete", "id", default="") or "")
                 break
-        if photo and self.graphics.enabled and text_w > 60:
+        if photo and self.graphics.enabled and room_w - 4 > 56 and room_h >= 6:
             png = self.logos.get("photo", {"id": f"{league}-{ident}", "logo": photo}, raw=True)
             size = png_size(png) if png else None
             if size:
-                c, r = fit_cells(size, 20, min(inner_h, 8), self.cell)
-                image_id = self.graphics.place(("photo", league, ident), png, c, r) \
-                    if c and r else None
-                if image_id:
-                    self.draw_lines(image_cells(image_id, c, r), top + 1, width - 2 - c,
-                                    inner_h, c, 0)
-                    art_rows, art_w = r, c
-        lines = goal_card_text(play, summary, event, league,
-                               text_w - (art_w + 2 if art_w else 0), inner_h,
-                               self._play_clips.get(chosen))
-        self.draw_lines(lines, top + 1, text_x, inner_h, text_w, 0)
-        # the game's flow under the words, with this goal ringed on it
-        below = max(len(lines), art_rows) + 1
-        room = inner_h - below
-        if room >= 8 and text_w >= 40:
-            what, flow = hockey_flow(summary, event, league, text_w, rows=min(room - 4, 10),
-                                     mark=hockey_clock_seconds(play, league))
-            if flow:
-                self.draw_lines([heading(f"Game flow  {what}")] + flow, top + 1 + below,
-                                text_x, room, text_w, 0)
+                art_w, art_rows = fit_cells(size, 16, min(room_h - 2, 7), self.cell)
+        beside = art_w + 2 if art_w and art_rows else 0
+        if not beside:
+            art_w = art_rows = 0
+
+        def words(width):
+            return goal_card_text(play, summary, event, league, width, room_h - 2, clip,
+                                  hints=not keys_below)
+        mark = hockey_clock_seconds(play, league)
+        goal_w, text_w = room_w, room_w - 4 - beside
+        lines = words(text_w)
+        goal_h = max(len(lines), art_rows) + 2
+        # GAME FLOW, this goal ringed on it: under THE GOAL where a chart of
+        # four rows fits there; else on a wide card beside it, THE GOAL as
+        # wide as its words; else not at all, THE GOAL the whole height
+        what, flow, box = None, [], None
+        if room_h - goal_h >= 9 and room_w >= 44:
+            what, flow = hockey_flow(summary, event, league, room_w - 4,
+                                     rows=min(room_h - goal_h - 5, 12), mark=mark)
+            box = (y + goal_h, x, room_h - goal_h, room_w)
+        if not flow and room_w >= 100 and room_h >= 9:
+            text_w = max(len(line.text) for line in words(56))
+            goal_w = text_w + 4 + beside
+            flow_w = room_w - goal_w - 1
+            if flow_w >= 44:
+                what, flow = hockey_flow(summary, event, league, flow_w - 4,
+                                         rows=min(room_h - 5, 14), mark=mark)
+                lines = words(text_w)
+                box = (y, x + goal_w + 1, room_h, flow_w)
+            if not flow:
+                goal_w, text_w = room_w, room_w - 4 - beside
+                lines = words(text_w)
+        if not flow or box[0] == y:
+            goal_h = room_h
+        self.draw_section(y, x, goal_h, goal_w, "The goal")
+        if beside:
+            image_id = self.graphics.place(("photo", league, ident), png, art_w, art_rows)
+            if image_id:
+                self.draw_lines(image_cells(image_id, art_w, art_rows), y + 1,
+                                x + goal_w - 2 - art_w, goal_h - 2, art_w, 0)
+        self.draw_lines(lines, y + 1, x + 2, goal_h - 2, text_w, 0)
+        if flow:
+            top_f, left_f, flow_h, flow_w = box
+            self.draw_section(top_f, left_f, flow_h, flow_w, "Game flow", what)
+            pad = max(0, (flow_h - 2 - len(flow)) // 2)
+            self.draw_lines(flow, top_f + 1 + pad, left_f + 2, flow_h - 2 - pad, flow_w - 4, 0)
 
     def draw_shots_and_flow(self, top, height, width, event, summary):
         """With no goal picked, the bottom of the Plays tab: the game's shot map
