@@ -752,7 +752,7 @@ def strf(moment, fmt):
     return moment.strftime(fmt if NOPAD == "%-" else fmt.replace("%-", NOPAD))
 
 APP = "sportst"
-VERSION = "7.2.0"
+VERSION = "7.3.0"
 
 CONFIG_DIR = os.path.join(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), APP
@@ -39166,6 +39166,25 @@ def overview_entries(favorites):
     return out
 
 
+OVERVIEW_DAYS = 21      # the Overview lists a favourite with a game this close (7.3.0)
+
+
+def glance_in_window(glance, now=None, days=OVERVIEW_DAYS):
+    """Whether a favourite belongs on the Overview (7.3.0): a game on now, a
+    result in the last `days` days or a game in the next `days`. None while
+    its schedule is unknown (loading, or it could not be read): such a team
+    stays listed."""
+    if not glance:
+        return None
+    if glance.get("live"):
+        return True
+    now = now or datetime.now(timezone.utc)
+    span = timedelta(days=days)
+    last = parse_iso((glance.get("last") or {}).get("date"))
+    upcoming = parse_iso((glance.get("next") or {}).get("date"))
+    return bool((last and last >= now - span) or (upcoming and upcoming <= now + span))
+
+
 def overview_line_map(entries, which):
     """(team index, side) for each line render_overview_rows draws, None for
     the league headings and the blank lines between them."""
@@ -39514,7 +39533,12 @@ def info_overview():
     ]), ("Game day", INFO_GAME_DAY), ("Your teams", [
         _p("Where sportst opens: your favourite teams at a glance. Each team has one "
            "row on each side, its latest result on the left and its next game (or "
-           "the game it is playing now) on the right."),
+           "the game it is playing now) on the right. Since 7.3.0 only the teams "
+           "with a game within three weeks either side of today are listed - one "
+           "playing now, one that played in the last three weeks or one that plays "
+           "in the next three; the rest are named under the list (Not shown) and "
+           "come back three weeks before their next game. The two sides scroll "
+           "together, and each logo stays beside its team."),
         ("W / L / T", "won, lost or tied; OT and SO mark overtime and a shootout (AHL)"),
         ("31-21", "the team's score first"),
         ("vs / at", "a home game / a road game; vs also for a neutral site"),
@@ -43653,9 +43677,11 @@ class App:
         # LEADERS in every sport) names it
         return [(title, left), (Line(), right)]
 
-    def draw_two_panes(self, top, height, width, key, panes):
+    def draw_two_panes(self, top, height, width, key, panes, together=None):
         """Two boxes side by side, each scrolling on its own (6.22.0). On a narrow terminal the
-        same content stacks in one box instead."""
+        same content stacks in one box instead. `together`: one offset both
+        boxes scroll by, in step, with no box of their own to focus (7.3.0) -
+        for two lists that match row for row, as the Overview's do."""
         view = height - 2
         if width < self.SPLIT_MIN_WIDTH:
             lines = []
@@ -43671,9 +43697,16 @@ class App:
             self.draw_scrollbar(top + 1, width - 2, view, len(lines), self.scroll[key])
             return
         left_width = width // 2
+        boxes = list(zip(panes, (0, left_width), (left_width, width - left_width)))
+        if together is not None:
+            for (title, body), x, w in boxes:
+                self.draw_box(top, x, height, w)
+                self.draw_lines([title], top, x + 2, 1, w - 4, 0)
+                self.draw_lines(body, top + 1, x + 2, view, w - 4, together)
+                self.draw_scrollbar(top + 1, x + w - 2, view, len(body), together)
+            return
         # 6.22.0: each pane scrolls on its own - the focused one (lit when there
         # is anything to scroll), tab moving over, the wheel over the other
-        boxes = list(zip(panes, (0, left_width), (left_width, width - left_width)))
         focus = self.split_focus(key, [len(body) for (_, body), _, _ in boxes], view)
         for index, ((title, body), x, w) in enumerate(boxes):
             offset = clamp(self.scroll[(key, index)], 0, max(0, len(body) - view))
@@ -47482,9 +47515,23 @@ class App:
             self.stop_clip()
         return True
 
+    def overview_teams(self):
+        """The favourites the Overview lists, and those it leaves out (7.3.0):
+        a team whose schedule shows no game within OVERVIEW_DAYS either side
+        of today is left out; one still loading, or whose schedule could not
+        be read, stays. ([(league, team)] shown, [(league, team)] left out)."""
+        shown, hidden = [], []
+        now = datetime.now(timezone.utc)
+        for league, team in overview_entries(self.favorites):
+            near = glance_in_window(self.load_glance(league, team).data, now)
+            (hidden if near is False else shown).append((league, team))
+        return shown, hidden
+
     def draw_overview(self, top, height, width):
         inner = width - 4
-        entries = overview_entries(self.favorites)
+        entries, hidden = self.overview_teams()
+        weeks = f"{OVERVIEW_DAYS // 7} weeks" if OVERVIEW_DAYS % 7 == 0 else \
+            f"{OVERVIEW_DAYS} days"
         self.overview_cursor = clamp(self.overview_cursor, 0, max(0, len(entries) - 1))
         if not entries:
             self.overview_side = "today"
@@ -47498,11 +47545,18 @@ class App:
         if rest < 4:
             return
         today_min = 7
+        names = ", ".join(team.get("name") or team.get("abbr") or "?" for _, team in hidden)
         if not entries:
-            hint = wrap_spans("No favourite teams yet. Star yours on the Favorites tab (0) - L "
-                              "picks the league - and their latest results, next games and "
-                              "live scores will lead this screen, with alerts when they "
-                              "score.", inner, "dim")
+            if hidden:
+                hint = wrap_spans(f"None of your teams has played in the last {weeks} or plays "
+                                  f"in the next {weeks}: {names}. Each comes back here once "
+                                  f"its next game is {weeks} away; the Favorites tab (0) has "
+                                  "them all.", inner, "dim")
+            else:
+                hint = wrap_spans("No favourite teams yet. Star yours on the Favorites tab (0) "
+                                  "- L picks the league - and their latest results, next "
+                                  "games and live scores will lead this screen, with alerts "
+                                  "when they score.", inner, "dim")
             hint_h = len(hint) + 2
             if rest >= hint_h + today_min:
                 self.draw_lines_box(rest_top, hint_h, width, "Your teams", hint)
@@ -47517,9 +47571,17 @@ class App:
         # real logos beside the teams where the terminal shows pictures
         gap = 3 if self.graphics.enabled and self.team_logos != "off" else 0
         spots_both, spots_last, spots_next = {}, {}, {}
+
+        def left_out(width):
+            # under the lists: the teams left out, and why (7.3.0)
+            if not hidden:
+                return []
+            return [blank()] + wrap_spans(f"Not shown, with no game within {weeks} either "
+                                          f"side: {names}", width, "muted")
         if narrow:
             both, cursor_line = render_overview_rows(self, entries, glances, inner, "both",
                                                      gap, spots_both)
+            both += left_out(inner)
             need = len(both) + 2
         else:
             pane = self.pane_width(width) - 4
@@ -47527,6 +47589,9 @@ class App:
                                                      gap, spots_last)
             upcoming, _ = render_overview_rows(self, entries, glances, pane, "next", gap,
                                                spots_next)
+            note = left_out(pane)
+            last += note
+            upcoming += [blank()] * len(note)       # the two lists stay row for row
             need = max(len(last), len(upcoming)) + 2
         fav_h = rest
         if rest - min(need, rest) >= today_min:
@@ -47542,6 +47607,8 @@ class App:
                 offset = max(0, cursor_line - 1)
             elif cursor_line + 1 >= offset + view:
                 offset = cursor_line + 2 - view
+            if not self._mouse_pick and self.overview_cursor == len(entries) - 1:
+                offset = len(both) - view       # the last team: the note under it too
             self.scroll[key] = clamp(offset, 0, max(0, len(both) - view))
             caption = Line().add(" Your teams ", "accent").add(
                 "· result: enter for game stats · next: enter for scouting · ← → ", "muted")
@@ -47562,13 +47629,19 @@ class App:
                 offset = max(0, cursor_line - 1)
             elif cursor_line >= offset + view:
                 offset = cursor_line - view + 1
+            if not self._mouse_pick and self.overview_cursor == len(entries) - 1:
+                offset = max(len(last), len(upcoming)) - view   # the note under it too
+            # both lists scroll together, by the offset the logos and the
+            # clicks use too (7.3.0: since 6.22.0 each pane had kept its own,
+            # so the logos could land a row or more off their teams)
+            offset = clamp(offset, 0, max(0, max(len(last), len(upcoming)) - view))
             self.scroll[key] = offset
             self.draw_two_panes(rest_top, fav_h, width, key, [
                 (Line().add(" Latest results ", "accent").add(
                     "· enter: game stats · ← → other side ", "muted"),
                  last),
                 (Line().add(" Up next ", "accent").add("· enter: its scouting report ",
-                                                      "muted"), upcoming)])
+                                                      "muted"), upcoming)], together=offset)
             half = width // 2
             for which, x0, x1 in (("last", 1, half - 2), ("next", half + 1, width - 2)):
                 self.hot_overview(entries, which, rest_top + 1, fav_h - 2, x0, x1,
@@ -47819,7 +47892,7 @@ class App:
             self.dirty = True          # still loading: look again on the next frame
 
     def open_overview_game(self, which, center=False):
-        entries = overview_entries(self.favorites)
+        entries = self.overview_teams()[0]
         if not entries:
             self.status_message = "Star some teams on the Favorites tab first (0)."
             return
@@ -47861,7 +47934,7 @@ class App:
         self.detail_scroll = 0
 
     def handle_overview_key(self, key):
-        count = len(overview_entries(self.favorites))
+        count = len(self.overview_teams()[0])
         moves = {ord("j"): 1, curses.KEY_DOWN: 1, ord("k"): -1, curses.KEY_UP: -1,
                  curses.KEY_NPAGE: 10, curses.KEY_PPAGE: -10,
                  curses.KEY_HOME: -10 ** 6, curses.KEY_END: 10 ** 6, ord("G"): 10 ** 6}
@@ -49408,7 +49481,7 @@ class App:
                 return [("j/k", "game"), ("h/l", "column"), ("enter", "open"),
                         ("tab", "next tab"), ("1", one), ("0", "favorites"),
                         ("p", "league"), ("O", "settings")] + tail
-            if not overview_entries(self.favorites):
+            if not self.overview_teams()[0]:
                 return [("tab", "next tab"), ("0", "favorites"), ("1", one),
                         ("p", "league"), ("O", "settings")] + tail
             side_name = "game stats" if self.overview_side == "last" else "scouting"
