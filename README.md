@@ -252,7 +252,7 @@ Other terminal windows that were already open need to be closed and opened again
 ### Step 5 - Check it and run it
 
 ```
-sportst --version               # sportst 7.1.0
+sportst --version               # sportst 7.2.0
 sportst --scores -L nba         # plain text: a quick network check
 sportst                         # the app
 ```
@@ -311,7 +311,7 @@ Since 7.0.0 sportst runs on Windows itself. Python on Windows has no curses modu
 
 ```
 cd $HOME\sportst
-py sportst --version            # sportst 7.1.0
+py sportst --version            # sportst 7.2.0
 py sportst --scores -L nba      # plain text: a quick network check
 py sportst                      # the app; Q quits
 ```
@@ -332,7 +332,7 @@ For the full picture on Windows, run the Linux version in WSL 2 with Kitty: in P
 cp /mnt/c/Users/YOUR-WINDOWS-NAME/Downloads/sportst ~/
 ```
 
-### Upgrading from an earlier version (for example 7.0.0 to 7.1.0)
+### Upgrading from an earlier version (for example 7.1.0 to 7.2.0)
 
 Your settings and favorites live in ~/.config/sportst and are not touched by an upgrade, so this only swaps the program file. (6.15.0 changed the look a new install starts with - the Retro NBC Sports scheme on ink, logos in blocks, CRT mode on in colour; a config.json that sportst wrote keeps every setting it had, and one written by hand gets the new defaults only for what it leaves out.)
 
@@ -373,12 +373,12 @@ chmod +x ~/.local/bin/sportst
 6. Check it:
 
 ```
-sportst --version               # sportst 7.1.0
+sportst --version               # sportst 7.2.0
 sudo apt install mpv            # optional: hear clips in the terminal
 sportst                         # O for Settings: enter opens a group's card
 ```
 
-7. Optional: clear the cache. Nothing in 7.1.0 needs it - it changes only how hockey's goal card on the Plays tab is laid out - but it is safe: logos, photos and Olympic pages are simply fetched again:
+7. Optional: clear the cache. Nothing in 7.2.0 needs it - it changes only the colour of the outlines inside each section - but it is safe: logos, photos and Olympic pages are simply fetched again:
 
 ```
 rm -rf ~/.cache/sportst
@@ -1716,17 +1716,23 @@ The app's own colours - titles, headings, borders, the cursor bar, the tab bar, 
 
 ```
 Retro ESPN         flagship red titles and cursor bar, ticker gold
-                   headings and active tab, cream text, on black
+                   headings and active tab, cream text, on black;
+                   red borders, the boxes inside them in gold
 Retro ABC Sports   bright yellow headings and cursor bar, white
-                   titles, royal-blue borders, on deep blue
+                   titles, royal-blue borders (the boxes inside
+                   them in yellow), on deep blue
 Retro CBS Sports   royal-blue titles and cursor bar, silver
                    headings and active tab, white text, on
-                   blue-black
+                   blue-black; royal-blue borders, the boxes
+                   inside them in silver
 Retro NBC Sports   gold headings, orange titles, peacock-teal
-                   borders and active tab, a purple cursor bar,
-                   on ink (the default since 6.15.0, on the ink
+                   borders and active tab (the boxes inside them
+                   in peacock purple), a purple cursor bar, on ink
+                   (the default since 6.15.0, on the ink
                    background #0A0A10)
 ```
+
+Since 7.2.0 every screen draws its outlines in two colours: a section - a pane, a card, a tab's frame - in the scheme's border colour, and the boxes inside it (the Plays tab's, Game Stats', the goal card's, the Standings' extras, a roster card's) in the scheme's second colour, along with the titled rules that divide a pane into parts (Scouting's Offense and Defense, the Stats tab's conferences, a team page's panels). Only the lines change colour: nothing inside a box is filled. The Game Center's cards are sections of their own and keep the border colour.
 
 Pick one on the Settings tab (Display, Colour scheme): h / l step through them and the screen repaints as you go. In config.json it is "color_scheme": "espn", "abc", "cbs" or "nbc". Team colours are drawn on top of whichever you choose. The schemes are colour palettes only; sportst is not affiliated with any network.
 

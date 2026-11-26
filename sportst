@@ -752,7 +752,7 @@ def strf(moment, fmt):
     return moment.strftime(fmt if NOPAD == "%-" else fmt.replace("%-", NOPAD))
 
 APP = "sportst"
-VERSION = "7.1.0"
+VERSION = "7.2.0"
 
 CONFIG_DIR = os.path.join(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), APP
@@ -9683,11 +9683,11 @@ def render_boxscore(summary, league, width, favorites=None):
         team = block_team(team_block)
         display = team["name"] or team["abbr"] or "?"
         starred = fav_rank(favorites or {}, league, team) >= 0
-        head = Line().add("── ", "border")
+        head = Line().add("── ", "subborder")
         if starred:
             head.add(STAR + " ", "star")
         head.add(f"{display} ", THEME.style(league, team, bold=True, fallback="title"))
-        head.add("─" * max(0, width - len(display) - 4 - (2 if starred else 0)), "border")
+        head.add("─" * max(0, width - len(display) - 4 - (2 if starred else 0)), "subborder")
         lines.append(head)
         lines.append(blank())
         lines.extend(boxscore_team_lines(team_block, league, width))
@@ -10680,7 +10680,7 @@ def pack_blocks(blocks, width, corners=None):
     for widths, boxes, height in placed:
         x = 0
         for box_w, (title, body) in zip(widths, boxes):
-            canvas.card(y, x, height, box_w, title or "", body, corners)
+            canvas.card(y, x, height, box_w, title or "", body, corners, border="subborder")
             x += box_w + 1
         y += height
     return canvas.rows()
@@ -13499,10 +13499,10 @@ def plays_sections(lines, width, corners=None):
         if not body:
             continue
         where[head] = len(out)
-        top = Line().add(f"{tl}─", "border")
+        top = Line().add(f"{tl}─", "subborder")
         used = 2
         if title:
-            top.add(" ", "border")
+            top.add(" ", "subborder")
             used += 1
             for text, style in title:
                 piece = text[: max(0, width - used - 3)]
@@ -13510,19 +13510,19 @@ def plays_sections(lines, width, corners=None):
                     break
                 top.add(piece, style)
                 used += len(piece)
-            top.add(" ", "border")
+            top.add(" ", "subborder")
             used += 1
-        top.add("─" * max(0, width - used - 1) + tr, "border")
+        top.add("─" * max(0, width - used - 1) + tr, "subborder")
         out.append(top)
         for index, line in body:
             where[index] = len(out)
-            boxed = Line().add("│ ", "border").extend_spans(fit_line(line, inner)) \
-                .add(" │", "border")
+            boxed = Line().add("│ ", "subborder").extend_spans(fit_line(line, inner)) \
+                .add(" │", "subborder")
             for name in ("play_ref", "play_first", "click"):
                 if hasattr(line, name):
                     setattr(boxed, name, getattr(line, name))
             out.append(boxed)
-        out.append(Line().add(bl + "─" * max(0, width - 2) + br, "border"))
+        out.append(Line().add(bl + "─" * max(0, width - 2) + br, "subborder"))
     return out, where
 
 
@@ -15342,8 +15342,8 @@ def render_standings(data, league, width, favorites, group_filter="", text="",
     blocks = []
     for title, table in tables:
         title = title[: max(1, block_width - 5)]
-        head = Line().add("── ", "border").add(f"{title} ", "title")
-        head.add("─" * max(0, block_width - len(title) - 4), "border")
+        head = Line().add("── ", "subborder").add(f"{title} ", "title")
+        head.add("─" * max(0, block_width - len(title) - 4), "subborder")
         blocks.append([head] + table)
     placed = []
     lines = flow_columns(blocks, width, placed=placed)
@@ -16442,7 +16442,7 @@ def render_playoff_picture(data, league, width, favorites):
                           5), "")]
         last = cuts[-1][0]
         rows.sort(key=lambda row: row[0])
-        block = [Line().add("── ", "border").add(f"{conference} ", "title")]
+        block = [Line().add("── ", "subborder").add(f"{conference} ", "title")]
         for seed, team, record, points, streak in rows[: last + 4]:
             line = Line()
             inside = seed <= last
@@ -16871,8 +16871,8 @@ def render_event_results(event, page, league, width, favorites):
         lines.append(Line().add("No results published for this event yet.", "dim"))
         return lines
     for name, table in tables:
-        head = Line().add("── ", "border").add(f"{name} ", "title")
-        head.add("─" * max(0, min(width, 72) - len(name) - 4), "border")
+        head = Line().add("── ", "subborder").add(f"{name} ", "title")
+        head.add("─" * max(0, min(width, 72) - len(name) - 4), "subborder")
         lines.append(head)
         lines.extend(render_wiki_table(table, width, league, favorites))
         lines.append(blank())
@@ -16894,8 +16894,8 @@ def render_sport_medallists(page, league, width, favorites):
                                                     re.I):
                 continue      # entry lists, qualification, venues
             title = table.get("caption") or section["title"] or "Table"
-            head = Line().add("── ", "border").add(f"{title} ", "title")
-            head.add("─" * max(0, min(width, 72) - len(title) - 4), "border")
+            head = Line().add("── ", "subborder").add(f"{title} ", "title")
+            head.add("─" * max(0, min(width, 72) - len(title) - 4), "subborder")
             lines.append(head)
             lines.extend(render_wiki_table(table, width, league, favorites))
             lines.append(blank())
@@ -18023,8 +18023,8 @@ def render_stats_table(table, league, width, favorites, view="All", sort_key=Non
             outer, inner = team_league_division(team)
             if last_place is None or outer != last_place[0]:
                 if outer:
-                    head = Line().add("── ", "border").add(f"{outer} ", "title")
-                    head.add("─" * max(0, table_width - len(outer) - 4), "border")
+                    head = Line().add("── ", "subborder").add(f"{outer} ", "title")
+                    head.add("─" * max(0, table_width - len(outer) - 4), "subborder")
                     lines.append(head)
             if inner and (last_place is None or (outer, inner) != last_place):
                 lines.append(Line().add(" " * max(1, rank_width - 2), "normal")
@@ -18694,8 +18694,8 @@ def comparison_blocks(table, ranks, away_row, home_row, away, home, league, widt
     longest = max([len(s["label"]) for s in table.get("stats") or []] + [12])
     label_width = clamp(min(longest, width - 30), 16, 34)
     for group in stat_groups(table):
-        block = [Line().add("── ", "border").add(f"{group} ", "title")
-                 .add("─" * (label_width + 22 - len(group)), "border")]
+        block = [Line().add("── ", "subborder").add(f"{group} ", "title")
+                 .add("─" * (label_width + 22 - len(group)), "subborder")]
         for stat in [s for s in table["stats"] if s["group"] == group]:
             av, hv = away_row["values"].get(stat["key"]), home_row["values"].get(stat["key"])
             ar = ranks.get(stat["key"], {}).get(away_row["id"])
@@ -18874,7 +18874,7 @@ def ahl_preview_lines(preview, side):
 
 def ahl_head_to_head(preview, event, league):
     """The season series and recent meetings out of an AHL preview."""
-    lines = [Line().add("── Season series ", "border")]
+    lines = [Line().add("── Season series ", "subborder")]
     away, home = event["away"], event["home"]
     for key, label in (("HeadToHeadRecord", "This season"),
                        ("last_HeadToHeadRecord", "Last season"),
@@ -18905,7 +18905,7 @@ def scouting_team_lines(team, side, summary, injuries, news, league, width, favo
     False leaves out the one-line form (basketball shows its own table)."""
     lines = []
     star = fav_rank(favorites, league, team) >= 0
-    head = Line().add("── ", "border")
+    head = Line().add("── ", "subborder")
     if star:
         head.add(STAR + " ", "star")
     head.add(team.get("name") or team.get("abbr") or "?",
@@ -18913,7 +18913,7 @@ def scouting_team_lines(team, side, summary, injuries, news, league, width, favo
     if team.get("record"):
         head.add(f"  {team['record']}", "bold")
     head.add(f"  {side} ", "muted")
-    head.add("─" * max(0, width - len(head.text)), "border")
+    head.add("─" * max(0, width - len(head.text)), "subborder")
     lines.append(head)
 
     # form: the last five results
@@ -22342,7 +22342,9 @@ def info_game_stats(league):
     }.get(sport, [])
     sections = [("This screen", [_p("The game's team statistics on the left and its "
                                     "leaders on the right, each part in a box of its own "
-                                    "with its name in the border. The boxes are packed "
+                                    "with its name in the border, outlined in the "
+                                    "colour scheme's second colour (the sections around "
+                                    "them keep the first). The boxes are packed "
                                     "side by side where they fit, and a part moves to the "
                                     "other side when that evens the two out, so most "
                                     "games fit without scrolling; j / k and PgDn scroll the rest.")]),
@@ -23783,6 +23785,7 @@ BASE_STYLES = {
     "selbar": (ESPN_RED_BRIGHT, SEL_BG, curses.A_BOLD),
     "seldim": ("#B0A9A2", SEL_BG, 0),
     "border": ("#8C2020", None, 0),
+    "subborder": ("#7A5C12", None, 0),
     "fav": (ESPN_GOLD_BRIGHT, None, curses.A_BOLD),
     "star": (ESPN_GOLD_BRIGHT, None, curses.A_BOLD),
     "warn": ("#FF9E3D", None, 0),
@@ -23844,7 +23847,8 @@ SCHEMES = {
         "label": "Retro ESPN", "note": "red, gold and cream on black",
         "normal": "#E6E3DC", "dim": "#9C9691", "muted": "#6E6862", "bold": "#FFFFFF",
         "title": "#E82A2A", "header": "#FFB81C", "accent": "#FFB81C",
-        "bright": "#FFC733", "border": "#8C2020", "sel_bg": "#4A0A0A",
+        "bright": "#FFC733", "border": "#8C2020", "subborder": "#7A5C12",
+        "sel_bg": "#4A0A0A",
         "selbar": "#E82A2A", "seldim": "#B0A9A2", "tab": "#9C9691",
         "tabsel_fg": "#1A0505", "tabsel_bg": "#FFB81C", "good": "#86C06C",
         "bad": "#D96A6A", "background": "#000000"},
@@ -23852,7 +23856,8 @@ SCHEMES = {
         "label": "Retro ABC Sports", "note": "yellow on deep blue, white titles",
         "normal": "#EEF1F8", "dim": "#A3ADC6", "muted": "#6F7A96", "bold": "#FFFFFF",
         "title": "#FFFFFF", "header": "#FFD100", "accent": "#FFD100",
-        "bright": "#FFE14D", "border": "#2B5FD9", "sel_bg": "#173A8C",
+        "bright": "#FFE14D", "border": "#2B5FD9", "subborder": "#7D6912",
+        "sel_bg": "#173A8C",
         "selbar": "#FFD100", "seldim": "#B9C3DC", "tab": "#A3ADC6",
         "tabsel_fg": "#06102A", "tabsel_bg": "#FFD100", "good": "#7BD389",
         "bad": "#FF7A7A", "background": "#06102A"},
@@ -23860,7 +23865,8 @@ SCHEMES = {
         "label": "Retro CBS Sports", "note": "royal blue and silver, white text",
         "normal": "#F2F4F7", "dim": "#A8B0BC", "muted": "#717987", "bold": "#FFFFFF",
         "title": "#4D9BFF", "header": "#D7DEE8", "accent": "#9CC9FF",
-        "bright": "#F5C542", "border": "#1D4F9E", "sel_bg": "#0F2E66",
+        "bright": "#F5C542", "border": "#1D4F9E", "subborder": "#56606F",
+        "sel_bg": "#0F2E66",
         "selbar": "#4D9BFF", "seldim": "#B4C0D3", "tab": "#A8B0BC",
         "tabsel_fg": "#04122E", "tabsel_bg": "#D7DEE8", "good": "#79C77E",
         "bad": "#F06A6A", "background": "#03060E"},
@@ -23868,7 +23874,8 @@ SCHEMES = {
         "label": "Retro NBC Sports", "note": "gold and orange, peacock teal and purple",
         "normal": "#F3EEE4", "dim": "#ABA393", "muted": "#756E62", "bold": "#FFFFFF",
         "title": "#F7941D", "header": "#FDB913", "accent": "#FDB913",
-        "bright": "#FFD24D", "border": "#00849E", "sel_bg": "#33204F",
+        "bright": "#FFD24D", "border": "#00849E", "subborder": "#6E48B8",
+        "sel_bg": "#33204F",
         "selbar": "#F7941D", "seldim": "#BDB2C9", "tab": "#ABA393",
         "tabsel_fg": "#001418", "tabsel_bg": "#00A3C4", "good": "#6DBE45",
         "bad": "#E0457B", "background": "#0A0A10"},
@@ -23903,6 +23910,9 @@ def apply_scheme(name):
         "selbar": (scheme["selbar"], scheme["sel_bg"], bold),
         "seldim": (scheme["seldim"], scheme["sel_bg"], 0),
         "border": (scheme["border"], None, 0),
+        # the boxes inside a section (since 7.2.0): a colour of their own, so a
+        # section's outline and its parts' outlines tell apart
+        "subborder": (scheme["subborder"], None, 0),
         "fav": (scheme["bright"], None, bold),
         "star": (scheme["bright"], None, bold),
         "pitchfoul": (scheme["accent"], None, 0),
@@ -23958,6 +23968,7 @@ def scheme_background(name):
 
 PLAIN_ATTRS = {
     "bold": curses.A_BOLD,
+    "subborder": curses.A_DIM,
     "header": curses.A_BOLD | curses.A_UNDERLINE,
     "title": curses.A_BOLD,
     "sel": curses.A_REVERSE,
@@ -27318,13 +27329,14 @@ def _pct3(value):
 
 
 def panel_title(text, width, right="", style="header"):
-    """A panel's heading: its name, a rule, and a note at the right end."""
+    """A panel's heading: its name, a rule (in the colour of a box inside a
+    section, since 7.2.0), and a note at the right end."""
     line = Line().add(f" {text} ", style)
     note = f" {right} " if right else ""
     room = width - len(line.text) - len(note)
     if room < 2 and note:
         note, room = "", width - len(line.text)
-    line.add("─" * max(0, room), "border")
+    line.add("─" * max(0, room), "subborder")
     if note:
         line.add(note, "muted")
     return line
@@ -28594,18 +28606,19 @@ class Canvas:
         for row in range(y, y + height):
             self.put(row, x, ch * max(0, width), style)
 
-    def card(self, y, x, height, width, title, lines, corners=None):
+    def card(self, y, x, height, width, title, lines, corners=None, border="border"):
         """A bordered card: `title` (text, or (text, style) spans) in its top
-        border and `lines` inside, a column in from each side."""
+        border and `lines` inside, a column in from each side; `border` the
+        outline's style ("subborder" for a box inside a section)."""
         if height < 2 or width < 6:
             return
         tl, tr, bl, br = corners or ROUND_CORNERS
-        self.put(y, x, tl + "─" * (width - 2) + tr, "border")
-        self.put(y + height - 1, x, bl + "─" * (width - 2) + br, "border")
+        self.put(y, x, tl + "─" * (width - 2) + tr, border)
+        self.put(y + height - 1, x, bl + "─" * (width - 2) + br, border)
         for row in range(y + 1, y + height - 1):
-            self.put(row, x, "│", "border")
+            self.put(row, x, "│", border)
             self.put(row, x + 1, " " * (width - 2), "normal")
-            self.put(row, x + width - 1, "│", "border")
+            self.put(row, x + width - 1, "│", border)
         spans = [(title, "title")] if isinstance(title, str) else list(title)
         if spans and spans[0][0]:
             head = Line().add(" ", spans[0][1]).extend_spans(spans).add(" ", spans[-1][1])
@@ -32555,7 +32568,7 @@ def roster_card_layout(card, player, league, team, width, height, photo=None,
             yy = y
             for index, (head, lines) in enumerate(column):
                 box_h = len(lines) + 2 if index < len(column) - 1 else y + row_h - yy
-                canvas.card(yy, x, box_h, col_w, head, lines, corners)
+                canvas.card(yy, x, box_h, col_w, head, lines, corners, border="subborder")
                 yy += box_h
             x += col_w + 1
         y += row_h
@@ -33930,12 +33943,12 @@ def framed(title, lines, width, corners=("╭", "╮", "╰", "╯")):
     tl, tr, bl, br = corners
     inner = max(1, width - 4)
     title = title[: max(0, width - 6)]
-    out = [Line().add(f"{tl}─ ", "border").add(title, "accent")
-           .add(" " + "─" * max(0, width - len(title) - 5) + tr, "border")]
+    out = [Line().add(f"{tl}─ ", "subborder").add(title, "accent")
+           .add(" " + "─" * max(0, width - len(title) - 5) + tr, "subborder")]
     for line in lines:
-        out.append(Line().add("│ ", "border").extend_spans(fit_line(line, inner))
-                   .add(" │", "border"))
-    out.append(Line().add(bl + "─" * max(0, width - 2) + br, "border"))
+        out.append(Line().add("│ ", "subborder").extend_spans(fit_line(line, inner))
+                   .add(" │", "subborder"))
+    out.append(Line().add(bl + "─" * max(0, width - 2) + br, "subborder"))
     return out
 
 
@@ -34177,7 +34190,7 @@ def ahl_projection_lines(data, width, favorites=None):
         spots = AHL_PLAYOFF_SPOTS[name]
         if len(teams) < spots:
             continue
-        block = [Line().add("── ", "border").add(f"{name} Division", "title")
+        block = [Line().add("── ", "subborder").add(f"{name} Division", "title")
                  .add(f"  top {spots} get in", "muted")]
         for high, low in AHL_FIRST_ROUND.get(spots, []):
             top, bottom = teams[high - 1], teams[low - 1]
@@ -39586,8 +39599,10 @@ SETTING_GROUPS = [
          "choices": lambda: [(k, SCHEMES[k]["label"]) for k in SCHEME_ORDER],
          "help": "The app's own colours: Retro ESPN (red, gold, cream on black), Retro "
                  "ABC Sports (yellow on deep blue), Retro CBS Sports (royal blue and "
-                 "silver) or Retro NBC Sports (gold, orange and peacock teal). Team "
-                 "colours are drawn on top of any of them."},
+                 "silver) or Retro NBC Sports (gold, orange and peacock teal). Each "
+                 "outlines the boxes inside a section in a second colour of its own "
+                 "(gold, yellow, silver, purple), so the parts stand apart from the "
+                 "whole. Team colours are drawn on top of any of them."},
         {"key": "team_colors", "label": "Team colours", "kind": "bool",
          "help": "Draw team names, panes and logos in each team's own colours."},
         {"key": "color_floor", "label": "Colour legibility floor", "kind": "float",
@@ -45761,7 +45776,7 @@ class App:
     def draw_section(self, top, left, height, width, title, note=""):
         """A titled box inside a section, in the style of the Plays tab's other
         boxes (plays_sections): the title upper case, a note after it."""
-        self.draw_box(top, left, height, width, title.upper(), "title")
+        self.draw_box(top, left, height, width, title.upper(), "title", "subborder")
         if note and width > len(title) + 12:
             room = width - len(title) - 8
             self.put(top, left + 4 + len(title), f" {note[:room]} ", self.palette("muted"))
