@@ -752,7 +752,7 @@ def strf(moment, fmt):
     return moment.strftime(fmt if NOPAD == "%-" else fmt.replace("%-", NOPAD))
 
 APP = "sportst"
-VERSION = "7.3.0"
+VERSION = "7.3.1"
 
 CONFIG_DIR = os.path.join(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), APP
@@ -26313,6 +26313,20 @@ def espn_game_days(league, month_iso, groups=None, timeout=15):
     return {"days": sorted(days)}
 
 
+def milb_game_days(month_iso, timeout=15):
+    """{'days': [iso dates with Minor League games in that month and a week
+    either side]}, from MLB's Stats API (7.3.1: ESPN has no Minor League
+    scoreboard). Only the dates are asked for, so it stays small."""
+    year, month = int(month_iso[:4]), int(month_iso[5:7])
+    first = Date(year, month, 1)
+    last = add_months(first, 1) - timedelta(days=1)
+    data = milb_get(f"/schedule?sportId={MILB_SPORTS}"
+                    f"&startDate={first - timedelta(days=7)}&endDate={last + timedelta(days=7)}"
+                    "&fields=dates,date,totalGames", timeout)
+    return {"days": sorted(str(day.get("date"))[:10] for day in data.get("dates") or []
+                           if day.get("date") and day.get("totalGames", 1))}
+
+
 def ahl_season_games(timeout=15):
     """Every game of the AHL season: [{day, home, away, id, label}]."""
     data = ht_get({"feed": "modulekit", "view": "schedule"}, timeout)
@@ -26341,16 +26355,21 @@ def espn_team_dates(league, team_id, timeout=15):
                                 [f"https://{SITE_HOSTS[1]}/{base}{query}"]), timeout)
         except Exception:  # noqa: BLE001 - another season type may answer
             continue
-        for event in data.get("events") or []:
-            game = _glance_game(event, team_id)
-            if not game:
-                continue
-            day = game_day(game["date"], game.get("time_tba"))
-            if day and day not in out:
-                out[day] = {"id": game["id"], "opp": game["opp"], "home": game["home"],
-                            "when": glance_when(game) if game["state"] == "pre" else
-                            f"{game['result']} {game['us']}-{game['them']}".strip()}
+        team_dates_fold(out, data.get("events") or [], team_id)
     return {"dates": out}
+
+
+def team_dates_fold(out, events, team_id):
+    """Add a team's games to the calendar's {day: game} (the first of a day)."""
+    for event in events:
+        game = _glance_game(event, team_id)
+        if not game:
+            continue
+        day = game_day(game["date"], game.get("time_tba"))
+        if day and day not in out:
+            out[day] = {"id": game["id"], "opp": game["opp"], "home": game["home"],
+                        "when": glance_when(game) if game["state"] == "pre" else
+                        f"{game['result']} {game['us']}-{game['them']}".strip()}
 
 
 def month_grid(first):
@@ -26720,21 +26739,73 @@ def espn_team_glance(league, team_id, timeout=15):
             if failures >= 3 and not (glance["last"] or glance["next"]):
                 raise
             continue
-        games = [g for g in (_glance_game(e, team_id) for e in data.get("events") or [])
-                 if g and g["id"]]
-        for game in games:
-            glance["color"] = glance["color"] or game["color"]
-            if game["state"] == "in":
-                glance["live"] = game
-            elif game["state"] == "post":
-                if game.get("tbd"):
-                    continue        # postponed or cancelled: not the last result
-                if not glance["last"] or game["date"] > glance["last"]["date"]:
-                    glance["last"] = game
-            elif game["date"][:16] >= now[:13]:
-                if not glance["next"] or game["date"] < glance["next"]["date"]:
-                    glance["next"] = game
+        glance_fold(glance, [g for g in (_glance_game(e, team_id)
+                                         for e in data.get("events") or []) if g and g["id"]],
+                    now)
     return glance
+
+
+def glance_fold(glance, games, now):
+    """Fold a team's games into its glance: the one being played, the latest
+    result and the next game from `now` (an ISO time, UTC)."""
+    for game in games:
+        glance["color"] = glance["color"] or game["color"]
+        if game["state"] == "in":
+            glance["live"] = game
+        elif game["state"] == "post":
+            if game.get("tbd"):
+                continue        # postponed or cancelled: not the last result
+            if not glance["last"] or game["date"] > glance["last"]["date"]:
+                glance["last"] = game
+        elif game["date"][:16] >= now[:13]:
+            if not glance["next"] or game["date"] < glance["next"]["date"]:
+                glance["next"] = game
+
+
+def milb_team_events(team_id, timeout=15):
+    """A Minor League team's games as ESPN-shaped events, from MLB's Stats
+    API (7.3.1: ESPN has no Minor League schedules, and asking it for one
+    answers HTTP 400) - this season's and, once it is out, the next one's."""
+    parents = milb_parents(timeout)
+    season = milb_season()
+    events = []
+    for year in (season, season + 1):
+        try:
+            data = milb_get(f"/schedule?teamId={urllib.parse.quote(str(team_id))}"
+                            f"&sportId={MILB_SPORTS}&season={year}&hydrate={MILB_HYDRATE}",
+                            timeout)
+        except Exception:  # noqa: BLE001 - next season's may not be out yet
+            if year == season:
+                raise
+            break
+        for day in data.get("dates") or []:
+            events.extend(milb_event(game, parents) for game in day.get("games") or [])
+    return events
+
+
+def milb_team_glance(team_id, timeout=15):
+    """{'last', 'next', 'live'} for one Minor League team (7.3.1)."""
+    glance = {"last": None, "next": None, "live": None, "color": ""}
+    glance_fold(glance, [g for g in (_glance_game(e, str(team_id))
+                                     for e in milb_team_events(team_id, timeout))
+                         if g and g["id"]],
+                datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M"))
+    return glance
+
+
+def milb_team_dates(team_id, timeout=15):
+    """{day: {'id', 'opp', 'home', 'when'}} for one Minor League team's
+    seasons, as espn_team_dates gives the calendar (7.3.1)."""
+    out = {}
+    team_dates_fold(out, milb_team_events(team_id, timeout), str(team_id))
+    return {"dates": out}
+
+
+def milb_last_game(team_id, timeout=15):
+    """A Minor League team's most recent completed game, or None (7.3.1)."""
+    games = [g for g in (_schedule_game(e, str(team_id))
+                         for e in milb_team_events(team_id, timeout)) if g and g["id"]]
+    return max(games, key=lambda g: g["date"]) if games else None
 
 
 def _ahl_game(g, team_id):
@@ -39250,7 +39321,7 @@ def render_overview_rows(app, entries, glances, width, which, logo_gap=0, spots=
         when = glance_when(game)
         opp_w = clamp(rest - max(17, len(when) + 1) - (6 if game.get("tv") else 0), 6, 25)
         out.add(f"{glance_opponent(game, league)[:opp_w - 1]:<{opp_w}}", base)
-        out.add(f"{when:<17}", base if chosen else "accent")
+        out.add(f"{when:<{max(17, len(when) + 1)}}", base if chosen else "accent")
         if game.get("tv"):
             out.add(game["tv"][:10], "seldim" if chosen else "dim")
         return out
@@ -39536,8 +39607,10 @@ def info_overview():
            "the game it is playing now) on the right. Since 7.3.0 only the teams "
            "with a game within three weeks either side of today are listed - one "
            "playing now, one that played in the last three weeks or one that plays "
-           "in the next three; the rest are named under the list (Not shown) and "
-           "come back three weeks before their next game. The two sides scroll "
+           "in the next three; the rest are named under the list (Not shown), each "
+           "with its league, and come back three weeks before their next game. A "
+           "Minor League team's games come from MLB's Stats API (since 7.3.1; ESPN "
+           "has none). The two sides scroll "
            "together, and each logo stays beside its team."),
         ("W / L / T", "won, lost or tied; OT and SO mark overtime and a shootout (AHL)"),
         ("31-21", "the team's score first"),
@@ -46473,9 +46546,9 @@ class App:
             return {g["day"] for g in games}, result.loading and not result.data
         groups = self.cfb_group if league == "cfb" else LEAGUES[league].get("groups")
         month = first.isoformat()[:7]
-        result = self.fetcher.get(("calendar", league, month, groups),
-                                  Loader(SITE_HOSTS[0], espn_game_days, league, month, groups),
-                                  ttl=3 * 3600)
+        source = Loader(MILB_HOST, milb_game_days, month) if league == "milb" else \
+            Loader(SITE_HOSTS[0], espn_game_days, league, month, groups)
+        result = self.fetcher.get(("calendar", league, month, groups), source, ttl=3 * 3600)
         return set((result.data or {}).get("days") or []), result.loading and not result.data
 
     def calendar_favorites(self):
@@ -46499,9 +46572,10 @@ class App:
                             "when": game["time"]}))
             return out, result.loading and not result.data
         for team in teams:
-            result = self.fetcher.get(("teamdates", league, team["id"]),
-                                      Loader(SITE_HOSTS[0], espn_team_dates, league,
-                                             team["id"]), ttl=3 * 3600)
+            source = Loader(MILB_HOST, milb_team_dates, team["id"]) if league == "milb" \
+                else Loader(SITE_HOSTS[0], espn_team_dates, league, team["id"])
+            result = self.fetcher.get(("teamdates", league, team["id"]), source,
+                                      ttl=3 * 3600)
             loading = loading or (result.loading and not result.data)
             for day, info in ((result.data or {}).get("dates") or {}).items():
                 out.setdefault(day, []).append((team, info))
@@ -46686,6 +46760,8 @@ class App:
         live = bool(previous and previous.data and previous.data.get("live"))
         if league == "ahl":
             source = Loader("lscluster.hockeytech.com", ahl_team_glance, team["id"])
+        elif league == "milb":
+            source = Loader(MILB_HOST, milb_team_glance, team["id"])
         else:
             source = Loader(SITE_HOSTS[0], espn_team_glance, league, team["id"])
         return self.fetcher.get(key, source, ttl=60 if live else 600)
@@ -47545,7 +47621,9 @@ class App:
         if rest < 4:
             return
         today_min = 7
-        names = ", ".join(team.get("name") or team.get("abbr") or "?" for _, team in hidden)
+        names = ", ".join(f"{team.get('name') or team.get('abbr') or '?'} "
+                          f"({LEAGUE_SHORT.get(league, league.upper())})"
+                          for league, team in hidden)
         if not entries:
             if hidden:
                 hint = wrap_spans(f"None of your teams has played in the last {weeks} or plays "
@@ -49406,6 +49484,8 @@ class App:
     def load_last_game(self, team):
         if self.league == "ahl":
             source = Loader("lscluster.hockeytech.com", ahl_last_game, team["id"])
+        elif self.league == "milb":
+            source = Loader(MILB_HOST, milb_last_game, team["id"])
         else:
             source = Loader(SITE_HOSTS[0], espn_last_game, self.league, team["id"])
         return self.fetcher.get(("lastgame", self.league, team["id"]), source, ttl=900)
