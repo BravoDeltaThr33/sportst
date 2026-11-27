@@ -752,7 +752,7 @@ def strf(moment, fmt):
     return moment.strftime(fmt if NOPAD == "%-" else fmt.replace("%-", NOPAD))
 
 APP = "sportst"
-VERSION = "7.3.1"
+VERSION = "7.3.2"
 
 CONFIG_DIR = os.path.join(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), APP
@@ -39607,8 +39607,8 @@ def info_overview():
            "the game it is playing now) on the right. Since 7.3.0 only the teams "
            "with a game within three weeks either side of today are listed - one "
            "playing now, one that played in the last three weeks or one that plays "
-           "in the next three; the rest are named under the list (Not shown), each "
-           "with its league, and come back three weeks before their next game. A "
+           "in the next three; the rest are left off until three weeks before their "
+           "next game (the Favorites tab has them all). A "
            "Minor League team's games come from MLB's Stats API (since 7.3.1; ESPN "
            "has none). The two sides scroll "
            "together, and each logo stays beside its team."),
@@ -47621,15 +47621,12 @@ class App:
         if rest < 4:
             return
         today_min = 7
-        names = ", ".join(f"{team.get('name') or team.get('abbr') or '?'} "
-                          f"({LEAGUE_SHORT.get(league, league.upper())})"
-                          for league, team in hidden)
         if not entries:
             if hidden:
                 hint = wrap_spans(f"None of your teams has played in the last {weeks} or plays "
-                                  f"in the next {weeks}: {names}. Each comes back here once "
-                                  f"its next game is {weeks} away; the Favorites tab (0) has "
-                                  "them all.", inner, "dim")
+                                  f"in the next {weeks}. Each comes back here once its next "
+                                  f"game is {weeks} away; the Favorites tab (0) has them all.",
+                                  inner, "dim")
             else:
                 hint = wrap_spans("No favourite teams yet. Star yours on the Favorites tab (0) "
                                   "- L picks the league - and their latest results, next "
@@ -47649,17 +47646,9 @@ class App:
         # real logos beside the teams where the terminal shows pictures
         gap = 3 if self.graphics.enabled and self.team_logos != "off" else 0
         spots_both, spots_last, spots_next = {}, {}, {}
-
-        def left_out(width):
-            # under the lists: the teams left out, and why (7.3.0)
-            if not hidden:
-                return []
-            return [blank()] + wrap_spans(f"Not shown, with no game within {weeks} either "
-                                          f"side: {names}", width, "muted")
         if narrow:
             both, cursor_line = render_overview_rows(self, entries, glances, inner, "both",
                                                      gap, spots_both)
-            both += left_out(inner)
             need = len(both) + 2
         else:
             pane = self.pane_width(width) - 4
@@ -47667,9 +47656,6 @@ class App:
                                                      gap, spots_last)
             upcoming, _ = render_overview_rows(self, entries, glances, pane, "next", gap,
                                                spots_next)
-            note = left_out(pane)
-            last += note
-            upcoming += [blank()] * len(note)       # the two lists stay row for row
             need = max(len(last), len(upcoming)) + 2
         fav_h = rest
         if rest - min(need, rest) >= today_min:
@@ -47685,8 +47671,6 @@ class App:
                 offset = max(0, cursor_line - 1)
             elif cursor_line + 1 >= offset + view:
                 offset = cursor_line + 2 - view
-            if not self._mouse_pick and self.overview_cursor == len(entries) - 1:
-                offset = len(both) - view       # the last team: the note under it too
             self.scroll[key] = clamp(offset, 0, max(0, len(both) - view))
             caption = Line().add(" Your teams ", "accent").add(
                 "· result: enter for game stats · next: enter for scouting · ← → ", "muted")
@@ -47707,8 +47691,6 @@ class App:
                 offset = max(0, cursor_line - 1)
             elif cursor_line >= offset + view:
                 offset = cursor_line - view + 1
-            if not self._mouse_pick and self.overview_cursor == len(entries) - 1:
-                offset = max(len(last), len(upcoming)) - view   # the note under it too
             # both lists scroll together, by the offset the logos and the
             # clicks use too (7.3.0: since 6.22.0 each pane had kept its own,
             # so the logos could land a row or more off their teams)

@@ -252,7 +252,7 @@ Other terminal windows that were already open need to be closed and opened again
 ### Step 5 - Check it and run it
 
 ```
-sportst --version               # sportst 7.3.1
+sportst --version               # sportst 7.3.2
 sportst --scores -L nba         # plain text: a quick network check
 sportst                         # the app
 ```
@@ -311,7 +311,7 @@ Since 7.0.0 sportst runs on Windows itself. Python on Windows has no curses modu
 
 ```
 cd $HOME\sportst
-py sportst --version            # sportst 7.3.1
+py sportst --version            # sportst 7.3.2
 py sportst --scores -L nba      # plain text: a quick network check
 py sportst                      # the app; Q quits
 ```
@@ -332,7 +332,7 @@ For the full picture on Windows, run the Linux version in WSL 2 with Kitty: in P
 cp /mnt/c/Users/YOUR-WINDOWS-NAME/Downloads/sportst ~/
 ```
 
-### Upgrading from an earlier version (for example 7.3.0 to 7.3.1)
+### Upgrading from an earlier version (for example 7.3.1 to 7.3.2)
 
 Your settings and favorites live in ~/.config/sportst and are not touched by an upgrade, so this only swaps the program file. (6.15.0 changed the look a new install starts with - the Retro NBC Sports scheme on ink, logos in blocks, CRT mode on in colour; a config.json that sportst wrote keeps every setting it had, and one written by hand gets the new defaults only for what it leaves out.)
 
@@ -373,12 +373,12 @@ chmod +x ~/.local/bin/sportst
 6. Check it:
 
 ```
-sportst --version               # sportst 7.3.1
+sportst --version               # sportst 7.3.2
 sudo apt install mpv            # optional: hear clips in the terminal
 sportst                         # O for Settings: enter opens a group's card
 ```
 
-7. Optional: clear the cache. Nothing in 7.3.1 needs it - it changes only where a Minor League team's schedule is read from - but it is safe: logos, photos and Olympic pages are simply fetched again:
+7. Optional: clear the cache. Nothing in 7.3.2 needs it - it only takes a line of text off the Overview - but it is safe: logos, photos and Olympic pages are simply fetched again:
 
 ```
 rm -rf ~/.cache/sportst
@@ -578,7 +578,7 @@ Milano Cortina 2026 and French Alps 2030 (winter); Paris 2024 and LA 2028 (summe
 
 A retro SPORTS TERMINAL title in the colours of your scheme, then one row per favorite team, grouped by league: its latest result on the left (W or L, the score with the team's own first, vs or at the opponent, the day) and its next game on the right (the opponent with its ranking in college, the day and start time in your time zone, and the TV network). A team playing right now shows LIVE with the score and the clock instead. On a narrow terminal the next game sits on the line under the result.
 
-Since 7.3.0 the Overview lists only the favorites with a game within three weeks either side of today: one playing now, one that played in the last three weeks, or one that plays in the next three. The rest - a WNBA team in November, an MLB team in the winter - are named in a line under the list (Not shown), each with its league, and come back on their own three weeks before their next game; the Favorites tab still has them all. A team whose schedule is still loading, or could not be read, stays listed. If none of your teams is in that window, the screen says so. The two sides scroll together as j / k move down the list, and in Kitty and Ghostty each team's logo stays beside its own name (before 7.3.0, once the list scrolled, a logo could land a row off and cover a league's name). Since 7.3.1 a Minor League favorite's latest result and next game, its days on the calendar and its last game on the Stats tab come from MLB's Stats API like the rest of the Minor Leagues; before, they were asked of ESPN, which has no Minor League schedules, so the team read "unavailable: HTTP 400 from site.api.espn.com" and the Settings tab listed the failures under Recent problems. The calendar's Minor League game days come from the Stats API too.
+Since 7.3.0 the Overview lists only the favorites with a game within three weeks either side of today: one playing now, one that played in the last three weeks, or one that plays in the next three. The rest - a WNBA team in November, an MLB team in the winter - are left off, with nothing said about them (since 7.3.2; 7.3.0 and 7.3.1 named them in a line under the list), and come back on their own three weeks before their next game; the Favorites tab still has them all. A team whose schedule is still loading, or could not be read, stays listed. If none of your teams is in that window, the screen says so. The two sides scroll together as j / k move down the list, and in Kitty and Ghostty each team's logo stays beside its own name (before 7.3.0, once the list scrolled, a logo could land a row off and cover a league's name). Since 7.3.1 a Minor League favorite's latest result and next game, its days on the calendar and its last game on the Stats tab come from MLB's Stats API like the rest of the Minor Leagues; before, they were asked of ESPN, which has no Minor League schedules, so the team read "unavailable: HTTP 400 from site.api.espn.com" and the Settings tab listed the failures under Recent problems. The calendar's Minor League game days come from the Stats API too.
 
 Each team has two games to choose from: its latest result on the left and its next game on the right. j / k pick the team; left and right (or h and l) move the highlight between its result and its next game - the side you are on is highlighted, the other carries a faint marker. Enter (or space) on a result opens that game's Game Stats tab; enter on a next game opens its Scouting report (or its Game Stats if it is being played right now) - either way sportst switches to that team's league and day, so 1 then shows that whole slate. B opens the latest result's Game Stats from either side. Z opens the highlighted game in the Game Center over the Overview instead; esc comes back. A game whose kick-off time has not been announced shows "TBA" on its real date. In Kitty or Ghostty each team's logo sits beside its name. With no favorites yet it says how to add them (0 is the Favorites tab). Olympic nations stay on the Olympic tabs.
 
