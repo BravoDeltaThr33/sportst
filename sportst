@@ -752,7 +752,7 @@ def strf(moment, fmt):
     return moment.strftime(fmt if NOPAD == "%-" else fmt.replace("%-", NOPAD))
 
 APP = "sportst"
-VERSION = "7.3.2"
+VERSION = "7.4.0"
 
 CONFIG_DIR = os.path.join(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), APP
@@ -6052,7 +6052,7 @@ class LogoStore:
 # In a text terminal (GNOME Terminal, Konsole, xterm ...) a team is shown by
 # its badge: its letters in a bold pixel font on its own colours, with a rim
 # and a bottom bar like a 1980s score bug - sharp in six rows, where a logo
-# drawn in blocks only reads when it is big. Kitty and Ghostty can show real
+# drawn in blocks only reads when it is big. Kitty, Ghostty and WezTerm show real
 # images: there sportst sends each picture once with the Kitty graphics
 # protocol and then draws Unicode placeholder cells where it goes (U+10EEEE
 # with two combining marks giving the cell's row and column in the picture,
@@ -6297,8 +6297,19 @@ IMAGE_SLOTS = 12        # pictures kept at once: Kim's three mouths, the logos
 IMAGE_MAX = 60          # rows a picture may span (the row marks run to 64)
 IMAGE_MAX_COLS = 400    # columns: past the 64th the terminal counts on from the left
 LOGO_IMAGE_PX = 256     # logos fetched at this size for real images
-# what main() learnt about the terminal before curses started
-TERMINAL = {"name": "", "graphics": False, "images": False, "why": "not checked"}
+# what main() learnt about the terminal before curses started; "placements":
+# it shows Kitty's pictures but not its placeholder cells (WezTerm, 7.4.0),
+# so each picture is laid over its cells after every frame (Graphics)
+TERMINAL = {"name": "", "graphics": False, "images": False, "why": "not checked",
+            "placements": False}
+# Windows has no way to ask the terminal what it can do, so a terminal that
+# shows pictures there can say so in the environment: SPORTST_PICTURES=images
+# (or text) answers for "auto" (Settings, Pictures). The Windows bundle sets
+# it, since its WezTerm passes pictures through. SPORTST_CELL_FILE names a
+# file holding a cell's size in pixels, "width height", for a terminal that
+# cannot say it otherwise (the bundle's WezTerm keeps it up to date).
+PICTURES_ENV = "SPORTST_PICTURES"
+CELL_FILE_ENV = "SPORTST_CELL_FILE"
 
 
 def probe_terminal(timeout=1.0):
@@ -6358,30 +6369,41 @@ def choose_pictures(config, probe=probe_terminal):
     want = str(config.get("pictures", "auto") or "auto").lower()
     term = os.environ.get("TERM", "")
     program = os.environ.get("TERM_PROGRAM", "")
+    told = os.environ.get(PICTURES_ENV, "").strip().lower()
+    if want == "auto" and told in ("images", "text"):
+        want, source = told, PICTURES_ENV
+    else:
+        source = "Settings, Pictures"
     if want == "text":
-        TERMINAL.update(images=False, why="text art (Settings, Pictures)")
+        TERMINAL.update(images=False, why=f"text art ({source})")
         return TERMINAL
     name, graphics = probe()
     lower = name.lower()
     kind = ("kitty" if "kitty" in lower or term == "xterm-kitty" or
             os.environ.get("KITTY_WINDOW_ID") else
             "ghostty" if "ghostty" in lower or term == "xterm-ghostty" or
-            program.lower() == "ghostty" else "")
-    TERMINAL.update(name=name or kind or term, graphics=graphics)
+            program.lower() == "ghostty" else
+            "wezterm" if "wezterm" in lower or program.lower() == "wezterm" else "")
+    TERMINAL.update(name=name or kind or term, graphics=graphics,
+                    placements=kind == "wezterm")
     if want == "images":
-        TERMINAL.update(images=True, why="real images (Settings, Pictures)")
+        TERMINAL.update(images=True, why=f"real images ({source})")
     elif graphics and kind:
         TERMINAL.update(images=True, why=f"real images ({kind} answered)")
     elif graphics:
         TERMINAL.update(images=False, why="text art (this terminal's images are untested)")
+    elif os.name == "nt":
+        TERMINAL.update(images=False, why=f"text art (Windows cannot ask the terminal; "
+                                          f"{PICTURES_ENV}=images turns them on)")
     else:
         TERMINAL.update(images=False, why="text art (no image support found)")
     return TERMINAL
 
 
 def cell_pixels():
-    """A terminal cell's size in pixels, (width, height); 10 x 20 when the
-    terminal does not say."""
+    """A terminal cell's size in pixels, (width, height): as the terminal
+    reports it, or as it writes it to SPORTST_CELL_FILE (Windows has no
+    other way to ask); 10 x 20 when neither says."""
     try:
         import fcntl
         import struct
@@ -6392,7 +6414,35 @@ def cell_pixels():
             return xpix / cols, ypix / rows
     except Exception:  # noqa: BLE001 - a guess is fine
         pass
-    return 10.0, 20.0
+    return told_cell() or (10.0, 20.0)
+
+
+TOLD_CELL = {"at": -1.0, "stamp": None, "size": None}
+
+
+def told_cell():
+    """The cell size the terminal writes to SPORTST_CELL_FILE, (width,
+    height) in pixels, or None: the file is looked at again at most four
+    times a second, and read again only when it has changed."""
+    path = os.environ.get(CELL_FILE_ENV, "")
+    if not path:
+        return None
+    now = time.monotonic()
+    if now - TOLD_CELL["at"] < 0.25:
+        return TOLD_CELL["size"]
+    TOLD_CELL["at"] = now
+    try:
+        info = os.stat(path)
+        stamp = (info.st_mtime_ns, info.st_size)
+        if stamp != TOLD_CELL["stamp"]:
+            with open(path, encoding="ascii", errors="replace") as handle:
+                width, height = (float(v) for v in handle.read(100).split()[:2])
+            TOLD_CELL["stamp"] = stamp
+            TOLD_CELL["size"] = (width, height) if 2 <= width <= 400 and \
+                4 <= height <= 800 else None
+    except (OSError, ValueError):
+        TOLD_CELL["size"] = None
+    return TOLD_CELL["size"]
 
 
 def kitty_transmit(image_id, png, cols, rows):
@@ -6425,7 +6475,7 @@ def kitty_store(image_id, png):
     return b"".join(parts)
 
 
-# Pictures laid under the text (Kitty, Ghostty), a row of cells at a time: a
+# Pictures laid under the text (Kitty, Ghostty, WezTerm), a row of cells at a time: a
 # span whose style is "!u:<number>:<row>|<style>" starts that row of one,
 # UNDERLAYS[number] saying what it is - (key, maker(cell width, cell height)
 # -> PNG, cols, rows). The text is drawn over it, the cells' own backgrounds
@@ -6508,8 +6558,8 @@ def fit_cells(size, cols, rows, cell=(10.0, 20.0)):
 
 
 # Rounded ends for chips - the tab picked, the badges, the result chips - in a
-# terminal that draws the Powerline half circles itself (Kitty and Ghostty do,
-# whatever the font): a chip's style starts with "(" and its first and last
+# terminal that draws the Powerline half circles itself (Kitty, Ghostty and
+# WezTerm do, whatever the font): a chip's style starts with "(" and its first and last
 # spaces become the ends. Elsewhere a "(" chip is drawn square, as before.
 SHAPES = {"round": False}
 PILL_LEFT, PILL_RIGHT = "\ue0b6", "\ue0b4"
@@ -6518,9 +6568,23 @@ PILL_LEFT, PILL_RIGHT = "\ue0b6", "\ue0b4"
 class Graphics:
     """Pictures for a terminal that shows them: each sent once, into one of
     IMAGE_SLOTS numbered slots, then shown wherever placeholder cells name
-    its number. Off, it does nothing."""
+    its number. Off, it does nothing.
 
-    def __init__(self, enabled, write=None):
+    With `placements` (WezTerm, 7.4.0: Kitty's pictures, but not its
+    placeholder cells) the app draws a picture's cells blank instead and
+    notes them (note_cell); text drawn over one later in the frame takes it
+    back (cover_cells), as it would a placeholder. After the frame the cells
+    are gathered into blocks - a run of a picture's columns, as many of its
+    rows as run on straight under it - and the picture's part for a block
+    is laid over it. Each picture is laid once, with no placement number:
+    WezTerm copies every picture that has one into each picture laid over
+    the same cells, so they would multiply frame by frame; laid again, a
+    picture without one simply moves. Two blocks of one picture become one
+    where the picture's own rows lie between them, else the bigger is laid.
+    Pictures under the text go the same way, their longest run of rows. In
+    CRT mode the glass lays them (CrtGlass.lay_over), under its seal."""
+
+    def __init__(self, enabled, write=None, placements=False):
         self.enabled = bool(enabled)
         self.write = write
         self.slots = {}          # (key, cols, rows) -> slot
@@ -6534,6 +6598,14 @@ class Graphics:
         self.under_shown = set()  # the (number, its row) laid in the frame before
         self.under_png = {}      # its number -> the PNG, to send again after a gap
         self.pending_under = []  # the pictures under the text to send this frame
+        self.placing = bool(placements)
+        self.sizes = {}          # (placements) number -> (width, height in pixels, cols, rows)
+        self.cells = {}          # (placements) screen row -> {column: (number, row, col)}
+        self.laid = set()        # (placements) the pictures laid last frame
+        self.covered = set()     # (placements) picture cells text took back this frame
+        self.under_laid = set()  # (placements) the pictures under the text laid last frame
+        self.hold = False        # (placements) CRT mode powering on: no pictures yet
+        self.glass = None        # (placements) CRT mode's glass, which lays them in turn
 
     def place(self, key, png, cols, rows):
         """The number to name this picture by at cols x rows cells, sending
@@ -6558,9 +6630,121 @@ class Graphics:
             self.slots[ident] = slot
             if self.tint:
                 png = self.tint(png)
-            self.pending.append(kitty_transmit(IMAGE_BASE + slot, png, cols, rows))
+            if self.placing:
+                size = png_size(png)
+                if not size or not all(size):
+                    del self.slots[ident]
+                    return None
+                self.sizes[IMAGE_BASE + slot] = (size[0], size[1], cols, rows)
+                self.pending.append(kitty_store(IMAGE_BASE + slot, png))
+            else:
+                self.pending.append(kitty_transmit(IMAGE_BASE + slot, png, cols, rows))
         self.last[slot] = self.frame
         return IMAGE_BASE + slot
+
+    def note_cell(self, row, col, number, pic_row, pic_col):
+        """(placements) A cell drawn for row pic_row, column pic_col of picture
+        `number`, at the screen's row, col this frame."""
+        self.cells.setdefault(row, {})[col] = (number, pic_row, pic_col)
+
+    def cover_cells(self, row, col, width):
+        """(placements) Text drawn over `width` cells from row, col: no
+        picture there this frame (as text over a placeholder cell)."""
+        cells = self.cells.get(row)
+        if cells:
+            for x in range(col, col + width):
+                if cells.pop(x, None) is not None:
+                    self.covered.add((row, x))
+
+    def lay(self):
+        """(placements) The escape codes that lay this frame's pictures over
+        their cells, each once, and take away the ones no longer there."""
+        runs = []
+        if not self.hold:
+            for y in sorted(self.cells):
+                run = None
+                for x, (number, pic_row, pic_col) in sorted(self.cells[y].items()):
+                    if run and run[0] == number and run[1] == pic_row and \
+                            x == run[3] + run[5] and pic_col == run[4] + run[5]:
+                        run[5] += 1
+                        continue
+                    run = [number, pic_row, y, x, pic_col, 1]
+                    runs.append(run)
+        self.cells = {}
+        covered, self.covered = self.covered, set()
+        # runs straight under each other, a picture's next row each, make a block
+        blocks, below = [], {}
+        for number, pic_row, y, x, pic_col, count in runs:
+            block = below.pop((number, pic_row, y, x, pic_col, count), None)
+            if block is None:
+                block = [number, pic_row, y, x, pic_col, count, 0]
+                blocks.append(block)
+            block[6] += 1
+            below[(number, pic_row + 1, y + 1, x, pic_col, count)] = block
+        one = {}
+        for block in blocks:
+            have = one.get(block[0])
+            one[block[0]] = block if have is None else self.join(have, block, covered)
+        parts, laid = [], set()
+        for number, pic_row, y, x, pic_col, cols, rows in one.values():
+            size = self.sizes.get(number)
+            if not size:
+                continue
+            width, height, pic_cols, pic_rows = size
+            if pic_col + cols > pic_cols or pic_row + rows > pic_rows:
+                continue
+            left = min(width - 1, pic_col * width // pic_cols)
+            top = min(height - 1, pic_row * height // pic_rows)
+            wide = max(1, min(width - left, (pic_col + cols) * width // pic_cols - left))
+            high = max(1, min(height - top, (pic_row + rows) * height // pic_rows - top))
+            laid.add(number)
+            parts.append(f"\x1b[{y + 1};{x + 1}H\x1b_Ga=p,i={number},x={left},y={top},"
+                         f"w={wide},h={high},c={cols},r={rows},z=1,C=1,q=2\x1b\\")
+        for number in sorted(self.laid - laid):
+            parts.append(f"\x1b_Ga=d,d=i,i={number},q=2\x1b\\")
+        self.laid = laid
+        return "".join(parts)
+
+    @staticmethod
+    def join(one, two, covered):
+        """(placements) Two blocks of one picture as one: in the same columns,
+        the picture's own rows between them, no text taken back there (a logo
+        strip's empty boxes are clear); else the bigger of the two."""
+        number, row_a, y_a, x_a, col_a, cols_a, rows_a = one
+        _, row_b, y_b, x_b, col_b, cols_b, rows_b = two
+        if (x_a, col_a, cols_a) == (x_b, col_b, cols_b) and y_a - row_a == y_b - row_b:
+            top, bottom = min(y_a, y_b), max(y_a + rows_a, y_b + rows_b)
+            if not any((y, x) in covered for y in range(top, bottom)
+                       for x in range(x_a, x_a + cols_a)):
+                return [number, top - (y_a - row_a), top, x_a, col_a, cols_a, bottom - top]
+        return max(one, two, key=lambda block: block[5] * block[6])
+
+    def lay_under(self):
+        """(placements) The escape codes that lay this frame's pictures under
+        the text - each once, its longest run of rows - and take away the
+        ones no longer there."""
+        best, current = {}, {}
+        for (number, band), (row, col, cols, cw, ch) in sorted(self.under_now.items()):
+            run = current.get(number)
+            if run and run[0] + run[5] == band and run[1] + run[5] == row and \
+                    run[2] == col and run[3] == cols:
+                run[5] += 1
+            else:
+                run = current[number] = [band, row, col, cols, (cw, ch), 1]
+            if number not in best or run[5] > best[number][5]:
+                best[number] = run
+        parts, laid = [], set()
+        for number, (band, row, col, cols, (cw, ch), count) in best.items():
+            cw, ch = max(1, int(cw)), max(1, int(ch))
+            laid.add(number)
+            parts.append(f"\x1b[{row + 1};{col + 1}H\x1b_Ga=p,i={number},x=0,y={band * ch},"
+                         f"w={max(1, cols * cw)},h={count * ch},c={cols},r={count},z=-1,"
+                         f"C=1,q=2\x1b\\")
+        for number in sorted(self.under_laid - laid):
+            parts.append(f"\x1b_Ga=d,d=i,i={number},q=2\x1b\\")
+        self.under_laid = laid
+        self.under_shown, self.under_now = set(self.under_now), {}
+        return "".join(parts)
 
     def underlay(self, key, maker, row, col, cols, band, cw, ch):
         """Lay row `band` of a picture under the text at row, col over cols
@@ -6610,6 +6794,9 @@ class Graphics:
         """After curses has drawn a frame: send the pictures it named, and lay
         (again: a cleared screen takes them away) the ones under the text."""
         self.frame += 1
+        if self.placing:
+            self.flush_laid()
+            return
         out = []
         if self.pending:
             out.append(b"".join(self.pending))
@@ -6634,16 +6821,41 @@ class Graphics:
         if out and self.write:
             self.write(b"".join(out))
 
+    def flush_laid(self):
+        """(placements) flush for WezTerm: send the pictures this frame named,
+        then lay each over its cells - by the glass, under its seal, while
+        CRT mode's glass is on."""
+        sent = []
+        if self.pending:
+            sent.append(b"".join(self.pending))
+            self.pending = []
+        if self.pending_under:
+            sent.append(b"".join(kitty_store(number, png) for number, png in self.pending_under))
+            self.pending_under = []
+        if sent and self.write:
+            self.write(b"".join(sent))
+        text = self.lay() + self.lay_under()
+        glass = self.glass
+        if glass is not None and glass.geometry:
+            glass.lay_over(text)
+        elif text and self.write:
+            self.write(("\x1b7" + text + "\x1b8").encode())
+
     def clear(self):
         """Forget every picture (on the way out, or when turned off)."""
-        if (self.slots or self.under) and self.write:
-            self.write(b"".join(f"\x1b_Ga=d,d=I,i={IMAGE_BASE + s},q=2\x1b\\".encode()
-                                for s in sorted(set(self.slots.values()))) +
+        if (self.slots or self.under or self.laid) and self.write:
+            numbers = {IMAGE_BASE + s for s in self.slots.values()} | set(self.laid)
+            self.write(b"".join(f"\x1b_Ga=d,d=I,i={n},q=2\x1b\\".encode()
+                                for n in sorted(numbers)) +
                        b"".join(f"\x1b_Ga=d,d=I,i={n},q=2\x1b\\".encode()
                                 for n in sorted(set(self.under.values()))))
         self.slots, self.last, self.pending = {}, {}, []
         self.under, self.under_last, self.under_now, self.under_shown = {}, {}, {}, set()
         self.under_png, self.pending_under = {}, []
+        self.sizes, self.cells, self.laid = {}, {}, set()
+        self.covered, self.under_laid = set(), set()
+        if self.glass is not None:
+            self.glass.pictures = ""
 
 
 def write_terminal(data):
@@ -6669,10 +6881,10 @@ def write_terminal(data):
 # scheme's, on raised blacks), the power-on sweep, trails where text moves
 # away, burn-in of the borders shown longest, and now and then a row that
 # slips sideways out of sync. Where the terminal shows pictures (Kitty,
-# Ghostty) see-through pictures laid over the text add the glass: scanlines
-# and the aperture grille, the vignette, a glow round bright text with red
-# and blue fringes, grain, flicker, a slow hum bar, the face's curve, a glare
-# on the glass and a bezel round it.
+# Ghostty, WezTerm) see-through pictures laid over the text add the glass:
+# scanlines and the aperture grille, the vignette, a glow round bright text
+# with red and blue fringes, grain, flicker, a slow hum bar, the face's
+# curve, a glare on the glass and a bezel round it.
 
 CRT_PHOSPHORS = {
     # the label, the raised black, the phosphor's colour and what its
@@ -6693,6 +6905,8 @@ CRT_HUM = 9.0           # seconds the hum bar takes to cross the screen
 CRT_GLASS_STEP = 0.1    # how often the glass's moving parts step - the hum bar,
                         # the grain's and the flicker's frames - all in one write
 CRT_GRAIN_FRAMES = 5    # the grain's frames, one a step, round and round
+CRT_MEND = 1.0          # WezTerm: how often the glass's lower layers are laid again
+                        # where text drawn since has taken them off
 CRT_CURVE = 0.022       # how far the tube bulges at the standard Curvature
 CRT_TYPE = 0.9          # seconds the typewriter takes over a full screen
 CRT_POST = 0.16         # seconds between the POST screen's lines
@@ -6712,7 +6926,7 @@ CRT_VEIL = (0, 0, 4, 0, 8, 0, 0, 3, 0, 0)
 # The effects the CRT effects card sets (Settings, c), each from 0 (off) to
 # 10: 5 is the standard look, 10 twice as strong. (key, label, layer, what
 # it is) - "text" effects work in any colour terminal, "glass" ones need
-# pictures (Kitty, Ghostty).
+# pictures (Kitty, Ghostty, WezTerm).
 CRT_EFFECTS = (
     ("blacks", "Raised blacks", "text",
      "The background is a lit tube's faint glow, not true black: how far it is "
@@ -6759,7 +6973,8 @@ CRT_EFFECTS = (
     ("vignette", "Vignette", "glass",
      "The edges and corners darker than the middle."),
     ("grain", "Grain", "glass",
-     "Faint moving grain, light and dark specks over the whole picture."),
+     "Faint moving grain, light and dark specks over the whole picture (not in "
+     "WezTerm, which would have to lay its tiles over and over)."),
     ("flicker", "Flicker", "glass",
      "A light, uneven flicker of the whole picture."),
     ("hum", "Hum bar", "glass",
@@ -6948,6 +7163,14 @@ def installed_font_families():
         except RuntimeError:
             FONT_FAMILIES["names"] = False
     return FONT_FAMILIES["names"]
+
+
+def in_wezterm():
+    """Whether sportst runs in WezTerm (7.4.0): from its answer when sportst
+    started, or the TERM_PROGRAM it sets (on Windows too, where nothing can
+    be asked)."""
+    name = str(TERMINAL.get("name") or "").lower()
+    return "wezterm" in name or os.environ.get("TERM_PROGRAM", "").lower() == "wezterm"
 
 
 def terminal_kind():
@@ -7404,6 +7627,51 @@ def kitty_frames(image_id, frames, width, height):
     return b"".join(parts)
 
 
+def kitty_loop(image_id, frames, width, height, gap=CRT_GLASS_STEP):
+    """Frames of RGBA as one picture the terminal plays round and round by
+    itself, `gap` seconds a frame: for WezTerm (7.4.0), which plays a
+    picture's frames on its own and takes no word to stop or pick one. A
+    frame goes in one escape code, as WezTerm takes a frame's data in one
+    piece only, and its gap under Z (Kitty's is z, which WezTerm reads as
+    nothing); the first goes twice, as the picture it starts from shows for
+    a moment only."""
+    import base64
+    wait = max(1, int(round(gap * 1000)))
+    parts = [kitty_raw(image_id, frames[0], width, height)]
+    for n, frame in enumerate(frames):
+        data = base64.b64encode(zlib.compress(bytes(frame), 6))
+        gap = max(1, wait - 40) if n == 0 else wait
+        parts.append(b"\x1b_G" + f"a=f,f=32,t=d,o=z,q=2,X=1,Z={gap},i={image_id},s={width},"
+                     f"v={height};".encode() + data + b"\x1b\\")
+    return b"".join(parts)
+
+
+def kitty_blend(image_id, rgba, width, height):
+    """One escape code that blends width x height RGBA pixels over picture
+    `image_id` (its first frame), in the terminal: how WezTerm (7.4.0) is
+    given the glass's still pictures as one. In one piece, as WezTerm
+    takes a frame's data in one piece only."""
+    import base64
+    data = base64.b64encode(zlib.compress(bytes(rgba), 6))
+    return b"\x1b_G" + f"a=f,f=32,t=d,o=z,q=2,r=1,i={image_id},s={width},v={height};".encode() + \
+        data + b"\x1b\\"
+
+
+def rgba_doubled(rgba, width, height, wide, high):
+    """width x height RGBA pixels at twice the size, each pixel four, cut
+    to wide x high."""
+    rows = []
+    for y in range(height):
+        row = rgba[y * width * 4:(y + 1) * width * 4]
+        big = bytearray(width * 8)
+        for lane in range(4):
+            big[lane::8] = row[lane::4]
+            big[4 + lane::8] = row[lane::4]
+        big = bytes(big[:wide * 4])
+        rows += [big, big]
+    return b"".join(rows[:high])
+
+
 def crt_scaled_size(width, height, most=400):
     """The smallest picture size with exactly the screen's shape, so the
     terminal can stretch it over the screen without a gap (a stretched
@@ -7632,7 +7900,20 @@ class CrtGlass:
     bezel, and the glow, its fringes and the soft focus (sent again when
     the screen changes). Each is
     left out while its effect is at 0. Placed again after every frame, since
-    clearing the screen takes pictures with it."""
+    clearing the screen takes pictures with it.
+
+    In WezTerm (`placements`, 7.4.0) the glass is fewer pictures, laid
+    afresh only when something changed (settle): WezTerm keeps a picture in
+    its cells only while it has a placement number of its own - text drawn
+    over a cell takes the others off it - but copies such a picture into
+    every picture laid over it later, so the glass would multiply frame by
+    frame. So the still parts (scanlines and grille, vignette, rim and
+    glare, bezel) are blended by the terminal into one picture, the seal,
+    the one picture with a placement number, taken off before anything
+    else is laid and put back last; the flicker and the hum bar are one
+    picture the terminal plays round by itself (it takes no word to pick a
+    frame); the glow's layers and the app's pictures go under the seal.
+    The grain is left out there: its tiles would be laid over and over."""
 
     RASTER, VIGNETTE, VEIL, HUM, GRAIN = (CRT_IMAGE_BASE + n for n in range(5))
     SHEEN, BEZEL = CRT_IMAGE_BASE + 11, CRT_IMAGE_BASE + 12
@@ -7644,8 +7925,18 @@ class CrtGlass:
              "grain": GRAIN, "sheen": SHEEN, "bezel": BEZEL}
     MOVING = frozenset((VEIL, HUM, GRAIN))      # stepped together (step)
 
-    def __init__(self, write):
+    SEAL, MOTION = RASTER, VEIL     # (placements) their picture numbers in WezTerm
+
+    def __init__(self, write, placements=False):
         self.write = write
+        self.placing = bool(placements)
+        self.pictures = ""          # (placements) the app's pictures, as Graphics lays them
+        self.due = False            # (placements) to be laid afresh at the next settle
+        self.marred = False         # (placements) text drawn since over the layers below
+        self.mended_at = 0.0
+        self.drop = []              # (placements) old glow pictures to take away
+        self.stale = set()          # (placements) "seal", "motion": to make again
+        self.made = {}              # (placements) kind -> (what it was made for, its codes)
         self.geometry = None
         self.margin = (0, 0, 0, 0)
         self.sheen_size = None
@@ -7673,9 +7964,13 @@ class CrtGlass:
         self.scaled = bool(self.small)
         self.hum_h = max(ch * 8, height // 5)
         self.tile = (min(cols, 24), min(rows, 8))
-        self.write(b"".join(self.build(part) for part in self.PARTS))
         self.hum_top = -self.hum_h
         self.hum_at = time.monotonic()
+        if self.placing:
+            self.write(self.build_seal() + self.build_motion())
+            self.due = True
+            return
+        self.write(b"".join(self.build(part) for part in self.PARTS))
 
     def build(self, part):
         """One of the glass's pictures as the escape codes that send it, at
@@ -7749,6 +8044,13 @@ class CrtGlass:
         away, at 0); the next frame places it."""
         if not self.geometry:
             return
+        if self.placing:
+            if part in ("raster", "vignette", "sheen", "bezel"):
+                self.stale.add("seal")
+            elif part in ("veil", "hum"):
+                self.stale.add("motion")
+            self.due = True
+            return
         self.write(f"\x1b_Ga=d,d=I,i={self.PARTS[part]},q=2\x1b\\".encode() +
                    self.build(part))
         if part == "hum":
@@ -7774,9 +8076,16 @@ class CrtGlass:
         at = max(0, top)
         return self._put(at // ch, 0, self.HUM, 13, f",y={skip},h={shown},Y={at % ch}")
 
+    def moving(self):
+        """The pictures sportst steps itself (step): none in WezTerm, which
+        plays the flicker and the hum bar itself."""
+        return set() if self.placing else self.parts & self.MOVING
+
     def place_all(self):
         if not self.geometry:
             return
+        if self.placing:
+            return              # WezTerm: the glass is laid by settle()
         cols, rows, cw, ch, _ = self.geometry
         parts = self.parts
         out = ["\x1b7"]
@@ -7813,8 +8122,7 @@ class CrtGlass:
         next frames - in one write, so the terminal draws them together,
         ten times a second at most, not each on a clock of its own."""
         parts = self.parts
-        if not self.geometry or not parts & self.MOVING or \
-                now - self.step_at < CRT_GLASS_STEP:
+        if not self.geometry or not self.moving() or now - self.step_at < CRT_GLASS_STEP:
             return
         self.step_at = now
         out = []
@@ -7836,6 +8144,139 @@ class CrtGlass:
         if out:
             self.write(("\x1b7" + "".join(out) + "\x1b8").encode())
 
+    # -- WezTerm (placements) ---------------------------------------------------
+
+    def build_seal(self):
+        """(placements) The still pictures - the scanlines and grille, the
+        vignette, the rim and glare, the bezel - as one, the seal: the
+        raster sent, the others blended over it by the terminal, at full
+        size (the rim and glare worked out at half size and doubled). Made
+        again only when what it is made for has changed."""
+        cols, rows, cw, ch, phosphor = self.geometry
+        width, height = cols * cw, rows * ch
+        framed = any(self.margin)
+        levels = tuple(crt_amount(key) for key in ("scanlines", "grille", "vignette", "curve",
+                                                   "glare", "bezel"))
+        why = (self.geometry, self.margin, levels)
+        self.parts.discard(self.SEAL)
+        if self.made.get("seal", (None,))[0] != why:
+            scan, stripes, vignette, curve, glare, bezel = levels
+            spec = CRT_PHOSPHORS.get(phosphor) or CRT_PHOSPHORS["green"]
+            layers = []
+            if vignette:
+                layers.append(crt_vignette(width, height, vignette))
+            if curve or glare:
+                half_w, half_h = (width + 1) // 2, (height + 1) // 2
+                layers.append(rgba_doubled(crt_sheen(half_w, half_h, curve, framed, glare),
+                                           half_w, half_h, width, height))
+            if framed and bezel:
+                top, left, bottom, right = self.margin
+                layers.append(crt_bezel(width, height, min(left, right + 1) * cw,
+                                        min(top, bottom) * ch, bezel, curve))
+            data = b""
+            if scan or stripes or layers:
+                base = crt_raster(width, height, spec[2] is not None, scan, stripes) \
+                    if scan or stripes else bytes(width * height * 4)
+                data = kitty_raw(self.SEAL, base, width, height) + \
+                    b"".join(kitty_blend(self.SEAL, layer, width, height) for layer in layers)
+            self.made["seal"] = (why, data)
+        data = self.made["seal"][1]
+        if data:
+            self.parts.add(self.SEAL)
+        return data
+
+    def build_motion(self):
+        """(placements) The flicker and the hum bar as one picture the
+        terminal plays round and round, a frame a step: the veil's
+        darknesses in turn over the band moving down the screen. Both are
+        soft, so it is small - two pixels wide - and stretched over the
+        screen."""
+        cols, rows, cw, ch, phosphor = self.geometry
+        flicker, hum = crt_amount("flicker"), crt_amount("hum")
+        why = (self.geometry, flicker, hum)
+        self.parts.discard(self.MOTION)
+        if self.made.get("motion", (None,))[0] != why:
+            data = b""
+            if flicker or hum:
+                tall = max(16, min(240, rows * 3))
+                band = max(1.0, self.hum_h * tall / (rows * ch))
+                light = (CRT_PHOSPHORS.get(phosphor) or CRT_PHOSPHORS["green"])[3] or \
+                    (255, 255, 255)
+                steps = int(round(CRT_HUM / CRT_GLASS_STEP)) if hum else len(CRT_VEIL)
+                frames = []
+                for step in range(steps):
+                    veil = min(255, round(CRT_VEIL[step % len(CRT_VEIL)] * flicker)) / 255
+                    top = -band + (tall + band) * step / steps
+                    lines = []
+                    for y in range(tall):
+                        t = (y + 0.5 - top) / band
+                        lit = 0.01 * hum * math.sin(math.pi * t) ** 2 if hum and 0 < t < 1 \
+                            else 0.0
+                        alpha = veil + lit * (1 - veil)
+                        share = lit * (1 - veil) / alpha if alpha > 0 else 0.0
+                        lines.append(bytes((round(light[0] * share), round(light[1] * share),
+                                            round(light[2] * share), round(alpha * 255))) * 2)
+                    frames.append(b"".join(lines))
+                data = kitty_loop(self.MOTION, frames, 2, tall)
+            self.made["motion"] = (why, data)
+        data = self.made["motion"][1]
+        if data:
+            self.parts.add(self.MOTION)
+        return data
+
+    def lay_over(self, pictures):
+        """(placements) The app's pictures this frame, as Graphics lays them:
+        laid at once when they have changed, else at the next mending."""
+        if pictures != self.pictures:
+            self.pictures = pictures
+            self.due = True
+        self.marred = True
+        self.settle()
+
+    def settle(self):
+        """(placements) Lay the glass afresh when it is due, and once a second
+        after text was drawn over the layers under the seal (which takes them
+        off where it lands): the seal taken off first, the glow, the motion
+        and the app's pictures laid, the seal put back last."""
+        if not self.geometry:
+            return
+        now = time.monotonic()
+        if not (self.due or self.stale or
+                (self.marred and now - self.mended_at >= CRT_MEND)):
+            return
+        out = []
+        if "seal" in self.stale:
+            out.append(f"\x1b_Ga=d,d=I,i={self.SEAL},q=2\x1b\\".encode() + self.build_seal())
+        if "motion" in self.stale:
+            out.append(f"\x1b_Ga=d,d=I,i={self.MOTION},q=2\x1b\\".encode() +
+                       self.build_motion())
+        self.stale = set()
+        cols, rows = self.geometry[:2]
+        whole = f",c={cols},r={rows}"
+        codes = ["\x1b7"]
+        if self.SEAL in self.parts:
+            codes.append(f"\x1b_Ga=d,d=i,i={self.SEAL},p=1,q=2\x1b\\")
+        codes.extend(self.drop)
+        self.drop = []
+        if self.glow:
+            codes.extend(self._lay(self.glow + layer, 10, whole) for layer in self.glow_layers)
+        if self.MOTION in self.parts:
+            codes.append(self._lay(self.MOTION, 12, whole))
+        codes.append(self.pictures)
+        if self.SEAL in self.parts:
+            codes.append(self._put(0, 0, self.SEAL, 13, whole))
+        codes.append("\x1b8")
+        out.append("".join(codes).encode())
+        self.write(b"".join(out))
+        self.due = self.marred = False
+        self.mended_at = now
+
+    @staticmethod
+    def _lay(image_id, z, extra=""):
+        """(placements) A picture laid at the top left with no placement
+        number: laid again, it moves."""
+        return f"\x1b[1;1H\x1b_Ga=p,i={image_id},z={z},C=1,q=2{extra}\x1b\\"
+
     def show_glow(self, layers):
         """Send the glow's layers, {0 bloom, 2 fringes, 4 soft focus:
         (rgba, width, height)} - the ones whose effects are on - and swap
@@ -7846,6 +8287,16 @@ class CrtGlass:
         new = self.GLOWS[1] if self.glow == self.GLOWS[0] else self.GLOWS[0]
         order = sorted(layers)
         parts = [kitty_raw(new + layer, *layers[layer]) for layer in order]
+        if self.placing:
+            self.write(b"".join(parts))
+            if self.glow:
+                self.drop.extend(f"\x1b_Ga=d,d=I,i={self.glow + layer},q=2\x1b\\"
+                                 for layer in self.LAYERS)
+            self.glow = new if order else None
+            self.glow_layers = tuple(order)
+            self.due = True
+            self.settle()
+            return
         if order:
             parts.append(("\x1b7" + "".join(self._put(0, 0, new + layer, 10,
                                                        f",c={cols},r={rows}")
@@ -7867,6 +8318,8 @@ class CrtGlass:
         self.frames = {}
         self.glow = None
         self.glow_layers = ()
+        self.pictures, self.drop, self.stale = "", [], set()
+        self.due = self.marred = False
 
 
 class CrtScreen:
@@ -7891,6 +8344,7 @@ class CrtScreen:
         self.slip = None
         self.slip_at = 0.0
         self.glass = None
+        self.graphics = None        # the app's Graphics, while on
         self.glow_due = False
         self.glow_at = 0.0
         self.glow_grid = None
@@ -7927,7 +8381,11 @@ class CrtScreen:
         self.boot = now if boot and crt_amount("power") else None
         self.slip = None
         self.slip_at = now + self.slip_gap()
-        self.glass = CrtGlass(write_terminal) if app.graphics.enabled else None
+        self.glass = CrtGlass(write_terminal, placements=app.graphics.placing) \
+            if app.graphics.enabled else None
+        self.graphics = app.graphics
+        if app.graphics.placing:
+            app.graphics.glass = self.glass     # WezTerm: the glass lays the pictures
         self.glow_due, self.glow_grid = False, None
         self.typing = self.flashes = None
         self.blinks, self.blink_phase, self.blink_epoch = [], 0, None
@@ -7941,6 +8399,8 @@ class CrtScreen:
             except Exception:  # noqa: BLE001 - on the way out
                 pass
         self.glass = None
+        if self.graphics is not None:
+            self.graphics.glass = None      # the pictures are laid on their own again
         self.on = False
         self.grid, self.prev, self.trails = [], None, []
         self.boot = self.slip = None
@@ -8242,6 +8702,8 @@ class CrtScreen:
                 wrote = self.start_slip(scr, now) or wrote
             if self.typing:
                 wrote = self.type_more(scr, now) or wrote
+                if self.typing is None and app.graphics.placing:
+                    app.dirty = True        # the pictures held back while it typed (WezTerm)
             if self.flashes:
                 wrote = self.flash_more(scr, now) or wrote
             if self.blinks:
@@ -8251,8 +8713,12 @@ class CrtScreen:
         if wrote:
             scr.noutrefresh()
             curses.doupdate()
+            if self.glass:
+                self.glass.marred = True
         if self.glass:
             self.glass.step(now)
+            if self.glass.placing:
+                self.glass.settle()
             if self.glow_due and self.boot is None and \
                     (self.glow_stale or not self.hold_glow) and \
                     now - self.glow_at >= CRT_GLOW_EVERY \
@@ -8277,8 +8743,10 @@ class CrtScreen:
             since = now - (self.blink_epoch or now)
             waits.append(half - since % half)
         if self.glass:
-            if self.glass.parts & self.glass.MOVING:
+            if self.glass.moving():
                 waits.append(CRT_GLASS_STEP - (now - self.glass.step_at))
+            if self.glass.placing and (self.glass.marred or self.glass.due):
+                waits.append(CRT_MEND - (now - self.glass.mended_at))
             if self.glow_due and (self.glow_stale or not self.hold_glow):
                 waits.append(CRT_GLOW_EVERY - (now - self.glow_at))
         return max(15, int(min(waits) * 1000))
@@ -20836,7 +21304,7 @@ KIM_COLORS = {"k": "2C3240", "h": "445C6E", "j": "688A9C", "s": "F4D4B4",
 # the original portrait: 128 x 168 pixels in the NES palette, cropped like the
 # pop-up to 96 x 126 (rows of palette letters, zlib, base64). Too detailed to
 # shrink into text, it is shown as a real picture where the terminal can show
-# pictures (Kitty, Ghostty).
+# pictures (Kitty, Ghostty, WezTerm).
 KIM_NES = {"w": "F8F8F8", "g": "7C7C7C", "k": "000000", "s": "F0D0B0", "b": "503000",
            "p": "F87858", "o": "FCA044", "h": "004058", "l": "BCBCBC", "r": "881400",
            "e": "E45C10", "d": "A81000"}
@@ -21877,7 +22345,7 @@ def info_scoreboard(league):
            + (" (or the Top 25, the ranked teams)" if league in COLLEGE_LEAGUES else "")
            + ", / finds a team by name, o shows the games being played only (o again "
            "shows every game). In a terminal "
-           "that shows pictures (Kitty, Ghostty) each team's logo sits beside its name."),
+           "that shows pictures (Kitty, Ghostty, WezTerm) each team's logo sits beside its name."),
     ]), ("Columns", [
         ("away / home", "the two teams. A team that lost is dimmed; the winner is bright"),
         ("rec", "the team's record: wins-losses" + ("-overtime losses" if sport_of(league)
@@ -21918,7 +22386,7 @@ def info_scoreboard(league):
          "against the posted number"),
         ("badge", "under a final: the winner's badge, its letters on its colours like "
                   "an old TV score bug - or its real logo, in a terminal that shows "
-                  "pictures (Kitty, Ghostty). Settings, Team logos and Pictures"),
+                  "pictures (Kitty, Ghostty, WezTerm). Settings, Team logos and Pictures"),
     ])]
     if league in WIRE_LEAGUES:
         length = {"nfl": "three and a half hours from the kickoff",
@@ -22146,7 +22614,7 @@ def info_player_card(league):
                "the bottom of the screen; the profile, his season and his games come "
                "from ESPN's player pages. Enter makes it bigger (more of his games), W "
                "opens his page in your browser, esc lets go."),
-            ("photo", "his headshot where the terminal shows pictures (Kitty, Ghostty); "
+            ("photo", "his headshot where the terminal shows pictures (Kitty, Ghostty, WezTerm); "
                       "drawn in blocks when Settings, Team logos is drawn; otherwise his "
                       "number on a badge in his team's colours"),
             ("B/T R/L", "which side he bats from and which hand he throws with"),
@@ -22189,7 +22657,7 @@ def info_player_card(league):
                "profile, his season and his games come from ESPN's player pages. Enter "
                "makes it bigger (more of his games), W opens his page in your browser, "
                "esc lets go."),
-            ("photo", "his headshot where the terminal shows pictures (Kitty, Ghostty); "
+            ("photo", "his headshot where the terminal shows pictures (Kitty, Ghostty, WezTerm); "
                       "drawn in blocks when Settings, Team logos is drawn; otherwise his "
                       "number on a badge in his team's colours"),
             ("Tonight", "the row picked, column by column as its table has them (C/ATT "
@@ -22226,7 +22694,7 @@ def info_player_card(league):
             _p("j / k pick a player and his card fills the bottom of the screen; the "
                "profile, his season and his games come from ESPN's player pages. Enter "
                "makes it bigger, W opens his page in your browser, esc lets go."),
-            ("photo", "his headshot where the terminal shows pictures (Kitty, Ghostty); "
+            ("photo", "his headshot where the terminal shows pictures (Kitty, Ghostty, WezTerm); "
                       "drawn in blocks when Settings, Team logos is drawn; otherwise his "
                       "number on a badge in his team's colours"),
             ("Tonight", "his line in this game: PTS, REB, AST, FG / 3PT / FT made-"
@@ -22264,7 +22732,7 @@ def info_player_card(league):
            f"profile, his season and his games come from {source}. Enter makes it "
            f"bigger (more of his games), W opens his page in your browser, esc lets "
            f"go."),
-        ("photo", "his headshot where the terminal shows pictures (Kitty, Ghostty); "
+        ("photo", "his headshot where the terminal shows pictures (Kitty, Ghostty, WezTerm); "
                   "drawn in blocks when Settings, Team logos is drawn; otherwise his "
                   "number on a badge in his team's colours"),
         ("Tonight", "his line in this game, from the box score: G A PTS, +/-, S shots "
@@ -22653,7 +23121,7 @@ def _info_plays(league):
                      "left, as an area (6.21.0, as on Game Stats): above the dashed 50% "
                      "line the home team (top label) was favoured, shaded in its "
                      "colours, below it the visitor in its own - a smooth line over a "
-                     "shaded area in Kitty and Ghostty, braille dots filled to the line "
+                     "shaded area in Kitty, Ghostty and WezTerm, braille dots filled to the line "
                      "elsewhere"),
                     ("50%", "the even line"),
                     ("biggest swing", "the play that moved the chance most"),
@@ -22692,7 +23160,7 @@ def _info_plays(league):
                                  "shoots at the left net, as on ESPN's game page. Since "
                                  "7.0.0 a real rink - the boards, the red and blue "
                                  "lines, the faceoff circles, the creases and the nets "
-                                 "- drawn as a picture in Kitty and Ghostty (each goal a "
+                                 "- drawn as a picture in Kitty, Ghostty and WezTerm (each goal a "
                                  "ringed disc; the away team's shots hollow when the "
                                  "colours clash), and in text on white ice with the "
                                  "creases blue"),
@@ -22701,7 +23169,7 @@ def _info_plays(league):
                                   "goal only) across the game, in the team's colour, a "
                                   "goal a ● on its team's line and again under the minute "
                                   "it came; ┴ and ┊ mark each period's start, ┈ half the "
-                                  "top count. Since 7.0.0 in Kitty and Ghostty a smooth "
+                                  "top count. Since 7.0.0 in Kitty, Ghostty and WezTerm a smooth "
                                   "line chart drawn as a picture, each line over a fill "
                                   "that fades to the floor"),
                 ]), ("The goal's card (NHL, AHL)", [
@@ -22740,7 +23208,7 @@ def _info_plays(league):
                                    ("s", "shows or hides them (6.22.0)")]),
                 ("Game flow, Biggest runs", [
                     ("Game flow", "the score margin across the game as columns (each "
-                                  "outlined in Kitty and Ghostty), from "
+                                  "outlined in Kitty, Ghostty and WezTerm), from "
                                   "the tip to now: the home team's lead above the line "
                                   "(0) in its colour, the visitor's below in its own, "
                                   "+14 the biggest lead each side had; ┴ marks each "
@@ -22754,7 +23222,7 @@ def _info_plays(league):
                 ("Shot chart", [
                     _p("Since 7.0.0 a real half court: maple boards, the lane painted in "
                        "the home team's colour (the team's own when one is shown), white "
-                       "lines and an orange rim - a picture in Kitty and Ghostty, the "
+                       "lines and an orange rim - a picture in Kitty, Ghostty and WezTerm, the "
                        "floor and the lane in colour in text."),
                     ("● / ○", "a made shot / a missed one, in the shooting team's colour"),
                     ("V", "switches between both teams, the away team and the home team"),
@@ -22774,7 +23242,7 @@ def _info_plays(league):
                     ("the diamond", "since 7.0.0 a ballpark from above - the outfield in "
                      "mowing stripes, the infield dirt, the mound, the foul lines - each "
                      "occupied base lit in the batting side's colour and ringed (a "
-                     "picture in Kitty and Ghostty, half blocks elsewhere); the runners "
+                     "picture in Kitty, Ghostty and WezTerm, half blocks elsewhere); the runners "
                      "named beside it"),
                     ("COUNT 3-2", "balls-strikes; under it BALLS (green), STRIKES (red) "
                      "and OUTS (amber) as a broadcast's lamps, lit for each one"),
@@ -22790,7 +23258,7 @@ def _info_plays(league):
                      "batter's own height when MLB measured it), split in thirds, the "
                      "plate under it. Since 7.0.0 drawn as a broadcast's: a lit box with "
                      "each pitch a disc in its call's colour, its number on it, the last "
-                     "one ringed (a picture in Kitty and Ghostty; a shaded zone with "
+                     "one ringed (a picture in Kitty, Ghostty and WezTerm; a shaded zone with "
                      "numbered chips elsewhere)"),
                     ("numbers", "pitches in the order thrown, coloured by result"),
                     ("● colours", "red called strike, purple swinging strike, green ball, "
@@ -23315,7 +23783,7 @@ def info_betting(league):
                                  "record; green is the better of the two. A team with "
                                  "no games yet has none"),
             ("Margin odds", "a picture of sportst's projected margin as a normal curve "
-                            "(in Kitty and Ghostty a smooth one, shaded, the spread a "
+                            "(in Kitty, Ghostty and WezTerm a smooth one, shaded, the spread a "
                             "gold dashed line), in whichever pane has more room, the "
                             "visitor's wins on the left in its "
                             "colour and the home team's on the right (┊ marks the "
@@ -23954,7 +24422,7 @@ def apply_scheme(name):
         "wiremajor": ("#FFFFFF", "#B3261E", bold),
         "wirefinal": (scheme["normal"], shade(scheme["muted"], 0.62), bold),
         "wiretag": (scheme["bright"], shade(scheme["border"], 0.55), bold),
-        # rounded shapes (Kitty, Ghostty): a key on the bottom line, the app's name
+        # rounded shapes (Kitty, Ghostty, WezTerm): a key on the bottom line, the app's name
         "keycap": (scheme["accent"], shade(scheme["border"], 0.30), bold),
         "appchip": (scheme["tabsel_fg"], scheme["tabsel_bg"], bold),
     })
@@ -24052,7 +24520,7 @@ class Palette:
         self._logo_reset()
         self.exact = False
         self.enabled = bool(enabled) and curses.has_colors()
-        # pictures (Kitty, Ghostty) are named by a palette index in the
+        # pictures (Kitty, Ghostty, WezTerm) are named by a palette index in the
         # foreground: one fixed pair per picture slot (none without colour)
         self.image_pair_base = 0
         self._image_attrs = {}
@@ -26515,7 +26983,7 @@ def _merge_spans(line):
     return out
 
 
-# the title as a real picture (Kitty, Ghostty): the same block letters,
+# the title as a real picture (Kitty, Ghostty, WezTerm): the same block letters,
 # drawn at the terminal's own pixel size, span by span
 
 def _spans_union(spans):
@@ -28407,7 +28875,7 @@ def big_width(text, mode="big"):
 # segment, the bulbs a digit does not use left dark in their sockets, and a
 # single-figure score showing its empty tens the same way ('~' in the text).
 # In text a bulb is ● two columns from the next on the dot font's own 3 x 5
-# grid, so nothing moves; in Kitty or Ghostty the number is a picture of real
+# grid, so nothing moves; in Kitty, Ghostty or WezTerm the number is a picture of real
 # bulbs on a 4 x 7 grid, each lit one glowing, drawn here at the cells' size.
 
 BULB = "●"
@@ -29084,7 +29552,7 @@ def football_drive_chart(summary, event, league, width, rows, info_line=True, pi
     and time. A live drive runs to the ball (●) with the line to gain (┃)
     ahead of it, and under the chart (with `info_line`) the down and distance
     as on the field. As many of the latest drives as `rows` holds; [] without
-    drives or room. With `pictures` (Kitty, Ghostty) a picture laid under the
+    drives or room. With `pictures` (Kitty, Ghostty, WezTerm) a picture laid under the
     text draws the field, the bars outlined and apart, and the results on
     cards (drive_chart_png); the text keeps the yards and the words."""
     drives = list(dig(summary, "drives", "previous", default=[]) or [])
@@ -39441,7 +39909,7 @@ INFO_GAME_CENTER = [
     ("the bulbs", "the scores and the clock in the middle, in light bulbs like an "
                   "old stadium scoreboard (every sport): each digit an 8 of bulbs, the "
                   "lit ones warm white and the rest dark in their sockets, a "
-                  "single-figure score with its tens unlit. Kitty and Ghostty show a "
+                  "single-figure score with its tens unlit. Kitty, Ghostty and WezTerm show a "
                   "picture of real bulbs, glowing; elsewhere ● bulbs in text on a big "
                   "screen and plain digits on a small one. A score flashes its bulbs "
                   "white; after the final the loser's burn low. The period under the "
@@ -39461,7 +39929,7 @@ INFO_GAME_CENTER = [
                        "and under its logo its one timeout, ● kept or ○ used (the NHL's, "
                        "from the stoppages in the play by play)"),
     ("the football", "football, while it is played: a ball between the logo and the "
-                     "score of the team that has it - in Kitty or Ghostty a picture of "
+                     "score of the team that has it - in Kitty, Ghostty or WezTerm a picture of "
                      "a real-looking ball, tipped as on a tee, its pebbled leather lit "
                      "from the upper left, the laces raised over the top seam and a soft "
                      "shadow under it; drawn in blocks elsewhere (a college ball has "
@@ -39487,7 +39955,7 @@ INFO_GAME_CENTER = [
                                "without one"),
     ("WIN PROBABILITY", "ESPN's chance for each team: the meter split where the two "
                         "chances meet, and the whole game's swing below. Where the "
-                        "terminal shows pictures (Kitty, Ghostty) the meter is a rounded "
+                        "terminal shows pictures (Kitty, Ghostty, WezTerm) the meter is a rounded "
                         "bar in the two teams' colours and the swing a smooth line over "
                         "the share of whoever led, shaded in that team's colours from "
                         "the dashed 50% line"),
@@ -39503,7 +39971,7 @@ INFO_GAME_CENTER = [
                     "its team. Then its plays, yards and time. The drive under way runs to "
                     "the ball (●) with the line to gain (┃) ahead, marked NOW, and moves "
                     "with each refresh. As many of the latest drives as fit. Where the "
-                    "terminal shows pictures (Kitty, Ghostty) a picture under the text "
+                    "terminal shows pictures (Kitty, Ghostty, WezTerm) a picture under the text "
                     "draws it: the grass in ten-yard stripes with its yard lines, each "
                     "drive a bar outlined in a light shade of the offense's colours with "
                     "a point where it ended and a strip of grass between it and the next, "
@@ -39517,7 +39985,7 @@ INFO_GAME_CENTER = [
                 "points, his number, position and team (#12 Quarterback · Alabama "
                 "Crimson Tide; QB on a narrow screen), and his line in every table he is in "
                 "(PASS 27/37, 304 YDS, 2 TD; RUSH 15 CAR, 52 YDS; DEF 9 TKL, 1 SACK). In "
-                "Kitty or Ghostty each in his photo. As many of the three as the room "
+                "Kitty, Ghostty or WezTerm each in his photo. As many of the three as the room "
                 "holds"),
     ("the diamond", "baseball, THE DIAMOND: ◆ a runner on that base (in the batting "
                     "team's colour), the count, the outs, who is pitching to whom and how "
@@ -39538,7 +40006,7 @@ INFO_GAME_CENTER = [
                        "fouls and turnovers) with his line; while the game is on, a "
                        "player two fouls from fouling out in amber and one foul away in "
                        "red, and anyone who fouled out. A narrow card keeps points, "
-                       "rebounds and assists; in Kitty or Ghostty each team's best is in "
+                       "rebounds and assists; in Kitty, Ghostty or WezTerm each team's best is in "
                        "his photo. Where the screen has no room for the card, THE GAME "
                        "names each side's top scorer"),
     ("GOALS, GOALIES", "hockey, under the home team's logo: every goal - period, time, "
@@ -39620,7 +40088,7 @@ def info_overview():
         ("Today 7 PM", "start time in your time zone; a weekday name means this "
                        "week, a date further out"),
         ("ESPN, SECN", "the TV network, when ESPN lists one"),
-        ("logos", "in a terminal that shows pictures (Kitty, Ghostty) each team's logo "
+        ("logos", "in a terminal that shows pictures (Kitty, Ghostty, WezTerm) each team's logo "
                   "sits beside its name, and the SPORTS TERMINAL title above is a "
                   "picture in your colour scheme's colours"),
         ("← →  h l", "move between the team's latest result (left) and its next "
@@ -39747,11 +40215,13 @@ SETTING_GROUPS = [
          "apply": "start",
          "help": "Real pictures - the SPORTS TERMINAL title, the team logos (small "
                  "ones down every list) and Kim's original portrait - in a "
-                 "terminal that can show them (Kitty, Ghostty), text art everywhere "
-                 "else. auto asks the terminal when sportst starts; the Pictures line "
-                 "on the right says what it found. real images sends them anyway, for "
-                 "another terminal that shows Kitty-protocol images; text art keeps to "
-                 "text and takes the pictures away at once."},
+                 "terminal that can show them (Kitty, Ghostty, WezTerm with its Kitty "
+                 "graphics on, as the Windows bundle has it), text art everywhere "
+                 "else. auto asks the terminal when sportst starts (on Windows, where "
+                 "nothing can be asked, SPORTST_PICTURES says: the bundle sets it); the "
+                 "Pictures line on the right says what it found. real images sends them "
+                 "anyway, for another terminal that shows Kitty-protocol images; text "
+                 "art keeps to text and takes the pictures away at once."},
         {"key": "crt", "label": "CRT effect", "kind": "bool",
          "help": "An old phosphor screen. In any colour terminal: the phosphor's "
                  "colours (CRT phosphor) on raised blacks, a power-on sweep and a "
@@ -39759,7 +40229,7 @@ SETTING_GROUPS = [
                  "slow line, trails where text moves away, burn-in of the borders shown "
                  "longest, a row now and then slipping out of sync, alerts that blink "
                  "and numbers that flash as fresh data changes them. Where the terminal "
-                 "shows pictures (Kitty, Ghostty) the glass too: scanlines, the aperture "
+                 "shows pictures (Kitty, Ghostty, WezTerm) the glass too: scanlines, the aperture "
                  "grille, a glow round bright text with red and blue fringes, the "
                  "vignette, grain, flicker, a slow hum bar, the tube's curve, a glare "
                  "on its glass and a bezel round it. A bitmap-style font finishes it: the "
@@ -40853,7 +41323,7 @@ class App:
         self.detail_scroll = 0
         self.filter_text = ""
         self.live_only = False      # the Scoreboard shows the games being played only (o)
-        SHAPES["round"] = bool(terminal_kind())
+        SHAPES["round"] = bool(terminal_kind()) or in_wezterm()
         self.kim = None             # Ask Kim's pop-up, while open
         self.kim_next = None        # when his next frame is due (time.monotonic), while he moves
         self.font_size_wanted = None    # Kitty's font size, set on the card, not yet sent
@@ -40943,7 +41413,8 @@ class App:
         self.logos = LogoStore(on_ready=self.logo_ready,
                                timeout=int(config.get("timeout_seconds", 15)))
         # real pictures, when main() found a terminal that shows them
-        self.graphics = Graphics(TERMINAL.get("images"), write_terminal)
+        self.graphics = Graphics(TERMINAL.get("images"), write_terminal,
+                                 placements=TERMINAL.get("placements"))
         UNDER["on"] = bool(self.graphics.enabled)
         self.cell = cell_pixels() if self.graphics.enabled else (10.0, 20.0)
         # CRT mode (Settings, Display): its phosphor while it is on
@@ -42373,6 +42844,9 @@ class App:
             self.stdscr.addstr(y, x, text, attr)
         except curses.error:
             pass
+        if self.graphics.cells:
+            top, left = self.stdscr.margin[:2]
+            self.graphics.cover_cells(y + top, x + left, len(text))
         if self.crt.on:
             top, left = self.stdscr.margin[:2]
             self.crt.record(y + top, x + left, text, attr)
@@ -42714,6 +43188,10 @@ class App:
             if self.show_help or self.show_info or getattr(self, "kim", None) or \
                     getattr(self, "popup", None) or getattr(self, "calendar", None):
                 self.graphics.drop_under()    # a pop-up is over them
+            # laid pictures (WezTerm) wait while CRT mode powers on or types
+            # the screen in, as placeholder cells would be blank then
+            self.graphics.hold = self.crt.on and (self.crt.boot is not None or
+                                                  self.crt.typing is not None)
             self.graphics.flush()      # the pictures this frame named, after curses
 
     def put_spans(self, y, x, line):
@@ -42744,6 +43222,10 @@ class App:
         if style and style.startswith("!u:"):
             self.note_underlay(y, x, style)
             style = style.partition("|")[2]
+        if style and style.startswith("!img:") and self.graphics.placing:
+            self.put(y, x, " ", self.palette(style))
+            self.note_picture(y, x, style)
+            return
         self.put(y, x, cell_text(text, style), self.palette(style))
 
     def put_pill(self, y, x, text, style):
@@ -42751,9 +43233,24 @@ class App:
         the terminal draws them."""
         self.put_span(y, x, text, "(" + style)
 
+    def note_picture(self, y, x, style):
+        """A picture's cell drawn blank at y, x ("!img:" style), noted to lay
+        that part of the picture over it after the frame (WezTerm: no
+        placeholder cells)."""
+        height, width = self.stdscr.getmaxyx()
+        if not (0 <= y < height and 0 <= x < width):
+            return
+        try:
+            parts = style.split(":")
+            number, row, col = int(parts[1]), int(parts[2]), int(parts[3])
+        except (ValueError, IndexError):
+            return
+        top, left = (getattr(self.stdscr, "margin", None) or (0, 0))[:2]
+        self.graphics.note_cell(y + top, x + left, number, row, col)
+
     def note_underlay(self, y, x, style):
         """A picture to lay under the text from here (an "!u:" span starts
-        it): passed to the terminal after the frame (Kitty, Ghostty)."""
+        it): passed to the terminal after the frame (Kitty, Ghostty, WezTerm)."""
         if not self.graphics.enabled:
             return
         number, _, band = style[3:].partition("|")[0].partition(":")
@@ -47727,7 +48224,7 @@ class App:
 
     def title_lines(self, width, room):
         """The Overview's SPORTS TERMINAL title: a real picture where the
-        terminal shows them (Kitty, Ghostty), the block letters elsewhere.
+        terminal shows them (Kitty, Ghostty, WezTerm), the block letters elsewhere.
         Either way it takes the same rows, and the tagline stays text."""
         lines = render_logo_lines(width, room)
         if not self.graphics.enabled or len(lines) < 5:
@@ -48676,11 +49173,13 @@ class App:
             return "Burn-in wiped: a fresh tube."
         if key == "hum":
             glass = crt.glass
+            if glass and glass.placing and glass.MOTION in glass.parts and crt_amount("hum"):
+                return "WezTerm plays the hum bar on its own clock: it cannot start it again."
             if glass and glass.HUM in glass.parts:
                 glass.restart_hum()
                 return "The hum bar starts again at the top."
             return "The hum bar is at 0." if glass else \
-                "The hum bar is on the glass, which needs Kitty or Ghostty."
+                "The hum bar is on the glass, which needs Kitty, Ghostty or WezTerm."
         if key == "type":
             return "The screen types out again." if crt.type_again() else \
                 "The typewriter is at 0."
@@ -49017,7 +49516,7 @@ class App:
                         lines.append(Line().add(" On every screen", "header"))
                     else:
                         head = Line().add(" On the glass", "header")
-                        head.add("  Kitty, Ghostty" if glass_here or not crt_on else
+                        head.add("  Kitty, Ghostty, WezTerm" if glass_here or not crt_on else
                                  "  not in this terminal: it shows no pictures", "muted")
                         lines.append(head)
                 chosen = index == cursor
@@ -49051,7 +49550,8 @@ class App:
             head = Line().add(label, "bold").add(" · ", "muted")
             head.add(crt_effect_now(key, levels[key], phosphor), "accent")
             if layer == "glass" and crt_on and not self.crt.glass:
-                text += " Not in this terminal: the glass needs pictures (Kitty, Ghostty)."
+                text += (" Not in this terminal: the glass needs pictures (Kitty, Ghostty, "
+                         "WezTerm).")
         about = [head] + wrap_spans(text, inner, "dim")
         keys, line = [], Line()
         for name, what in self.crt_card_keys(key):
@@ -50586,8 +51086,16 @@ class App:
             self.set_crt()
             self.start_post()
         running = True
+        told = told_cell()
         while running:
             now = time.time()
+            if told_cell() != told:
+                # the terminal wrote a new cell size (WezTerm on Windows, a new
+                # font size): the pictures and the glass follow it
+                told = told_cell()
+                if self.graphics.enabled:
+                    self.cell = cell_pixels()
+                    self.dirty = True
             self.fetcher.frozen = not self.auto_refresh
             if self.auto_refresh and now - self.last_auto > self.interval:
                 self.last_auto = now
