@@ -752,7 +752,7 @@ def strf(moment, fmt):
     return moment.strftime(fmt if NOPAD == "%-" else fmt.replace("%-", NOPAD))
 
 APP = "sportst"
-VERSION = "7.4.0"
+VERSION = "7.4.1"
 
 CONFIG_DIR = os.path.join(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), APP
@@ -14465,7 +14465,13 @@ def render_shot_chart(summary, league, width, view="both", favorites=None,
         # the picked play's shot, ringed where it was taken
         ring = (clamp(int((focus[1] + court["baseline"]) / (feet_per_px * 4)), 0, rows - 1),
                 clamp(int((focus[0] / 50.0) * cols), 0, cols - 1))
-    floor_team = (away if view == "away" else home) or away
+    # 7.4.1: a team shoots at the other team's basket, so one team's shots (V, or
+    # a player's) sit on the other team's floor; both teams together on the home's
+    shooting = [t for t in (away, home) if t and t["id"] in wanted]
+    if len(shooting) == 1 and away and home:
+        floor_team = home if shooting[0] is away else away
+    else:
+        floor_team = home or away
     order = [t for t in (away and away["id"], home and home["id"]) if t]
     if UNDER["on"]:
         # 7.0.0: a real court drawn under blank cells
@@ -22713,8 +22719,9 @@ def info_player_card(league):
                           "each basket and each assist with the clock and the score "
                           "(his team's first); free throws at one stop of the clock "
                           "make one row, an and-one says so"),
-            ("His shots", "on a bigger card: his shots tonight on a half court, ● made "
-                          "○ missed"),
+            ("His shots", "on a bigger card: his shots tonight on a half court, the "
+                          "lane in the other team's colour (the basket he shoots at), "
+                          "● made ○ missed"),
             ("Top performers", "with nobody picked, the game's top three by game score "
                                "fill the room the tables leave: each with his line "
                                "tonight, his season and his last games; a click opens "
@@ -23221,9 +23228,10 @@ def _info_plays(league):
                 ]),
                 ("Shot chart", [
                     _p("Since 7.0.0 a real half court: maple boards, the lane painted in "
-                       "the home team's colour (the team's own when one is shown), white "
-                       "lines and an orange rim - a picture in Kitty, Ghostty and WezTerm, the "
-                       "floor and the lane in colour in text."),
+                       "the home team's colour, white lines and an orange rim - a picture "
+                       "in Kitty, Ghostty and WezTerm, the floor and the lane in colour in "
+                       "text. With one team shown (V) the lane is the other team's colour, "
+                       "since a team shoots at the other team's basket (7.4.1)."),
                     ("● / ○", "a made shot / a missed one, in the shooting team's colour"),
                     ("V", "switches between both teams, the away team and the home team"),
                     ("Rim", "within 4 feet of the basket"),
@@ -30169,9 +30177,12 @@ def game_top_scorer(summary, team_id, stat="points"):
 
 # -- basketball ---------------------------------------------------------------
 
-def half_court(shots, league, team, cols):
+def half_court(shots, league, team, cols, floor=None):
     """One team's shots on a half court seen from above (the rim at the top):
-    braille court lines, ● a make and ○ a miss in the team's colour."""
+    braille court lines, ● a make and ○ a miss in the team's colour. The lane
+    is in `floor`'s colour, the team whose basket it is (7.4.1: the other
+    team's), and in the shooter's own without one."""
+    floor = floor or team
     court = court_for(league)
     depth = 28.0
     feet_per_px = 50.0 / (cols * 2)
@@ -30189,16 +30200,16 @@ def half_court(shots, league, team, cols):
         made, missed = marks.get((row, col), (0, 0))
         marks[(row, col)] = (made + shot["made"], missed + (not shot["made"]))
     if UNDER["on"]:
-        # 7.0.0: a real court drawn under blank cells, the lane in the team's colour
+        # 7.0.0: a real court drawn under blank cells, the lane in `floor`'s colour
         spec = {"cols": cols, "rows": rows, "baseline": court["baseline"],
                 "lane": court["lane"], "arc": court["arc"], "corner": court["corner"],
-                "paint": court_paint_hex(league, team), "teams": (team_hex(league, team),),
+                "paint": court_paint_hex(league, floor), "teams": (team_hex(league, team),),
                 "shots": tuple((round(s["x"], 1), round(s["y"], 1), int(s["made"]), 0, 0)
                                for s in shots)}
         number = underlay_number(("court", repr(spec)),
                                  lambda cw, ch, sp=spec: court_png(sp, cw, ch), cols, rows)
         return underlay_lines([Line().add(" " * cols, "normal") for _ in range(rows)], number)
-    paint, ink = court_paint_hex(league, team), court_shot_hex(league, team)
+    paint, ink = court_paint_hex(league, floor), court_shot_hex(league, team)
     lines = []
     for row in range(rows):
         line = Line()
@@ -30320,7 +30331,9 @@ def bball_courts(summary, event, league, cols):
         if len(head.text) + len(text) > cols:
             text = f"{made}/{len(mine)} FG"
         head.add(text[: max(0, cols - len(head.text))], "dim")
-        courts.append([head] + half_court(mine, league, team, cols))
+        # 7.4.1: on the other team's floor, the basket it shoots at
+        other = event["home" if side == "away" else "away"]
+        courts.append([head] + half_court(mine, league, team, cols, floor=other))
     out = []
     for index in range(max(len(court) for court in courts)):
         line = Line()
@@ -31229,7 +31242,9 @@ def basketball_panel(summary, event, league, width, height):
             made = sum(1 for s in mine if s["made"])
             head = Line().add(f"{team.get('abbr', '')} ", THEME.style(league, team, bold=True))
             head.add(f"{made}/{len(mine)} from the field"[: max(0, cols - 5)], "dim")
-            courts.append([head] + half_court(mine, league, team, cols)[: height - 2])
+            other = event["home" if side == "away" else "away"]
+            courts.append([head] + half_court(mine, league, team, cols,
+                                              floor=other)[: height - 2])
         rows = max(len(c) for c in courts)
         for index in range(rows):
             line = Line()
@@ -39994,7 +40009,8 @@ INFO_GAME_CENTER = [
                  "they came in - innings, hits, runs, earned runs, walks, strikeouts and "
                  "pitches - W, L and S marking the decisions"),
     ("the court", "basketball, every part on a card of its own: SHOT CHART, each "
-                  "team's shots on its own half court, ● made, ○ missed; BY QUARTER (BY "
+                  "team's shots on a half court of its own, the lane in the other "
+                  "team's colour (the basket it shoots at), ● made, ○ missed; BY QUARTER (BY "
                   "HALF in college), the line score; THE GAME, the run (points "
                   "unanswered), lead changes and ties, the biggest leads, team fouls "
                   "this period, points in the paint and on the break and turnovers; "
