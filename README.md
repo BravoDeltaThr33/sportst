@@ -1,6 +1,6 @@
 # sportst
 
-**A terminal scoreboard for the NFL, college football, the NBA, the WNBA, men's and women's college basketball, the NHL, the AHL, MLB, Minor League Baseball, NCAA Division I college baseball and softball, and the Winter and Summer Olympics.** It runs on Linux, macOS and Windows.
+**A terminal scoreboard for the NFL, college football, the NBA, the WNBA, men's and women's college basketball, the NHL, the AHL, MLB, Minor League Baseball, NCAA Division I college baseball and softball, and the Winter and Summer Olympics.** It runs on Linux, macOS and Windows - where, since 7.4.0, a ready-made folder also opens it in a window of its own, pictures and all.
 
 Scoreboard, scouting reports, box scores, every team's season stats, plays, standings, brackets, betting lines with sportst's own value picks, and favorites over ESPN's public API, the AHL's own HockeyTech feed, MLB's own Stats API for the minor leagues, and Wikipedia for the Olympic sports ESPN does not cover - with the NHL's and MLB's own stats APIs and NCAA.com filling in the team numbers ESPN does not publish, and Action Network and Kalshi supplying every sportsbook's line.
 
@@ -8,7 +8,7 @@ Pick any scoring play on the Plays tab and hear its clip, with the broadcast cal
 
 Hockey (NHL and AHL) goes deepest: pick any player in a box score for his card - his photo, who he is, his game, his season and his last games - see a game's flow, its three stars and every shot on the rink, pick a goal for where it came from and the goalie it beat, and see the bracket the standings would make today.
 
-It opens on an Overview of your favorite teams - each one's latest result and next game under a retro SPORTS TERMINAL title - with every league's games today underneath: live now, coming up, final. Pick any team in the standings for its team page: the whole season game by game beside a dashboard of it - every game's margin as a bar chart, the next game with its line, the division race, the season's splits, a report card and the road ahead. Press Z on any game for the Game Center, a full-screen live scoreboard drawn for its sport - the football field, the baseball diamond, the basketball court with every shot, the hockey rink with every shot on goal, the soccer match timeline - with win probability and the last plays; on an Olympic event, the podium. A BottomLine ticker pages through the day's scores while you work, a live wire crawls above it while a league's games are on - every goal and power play, every run and big night, every touchdown - as it happens, your teams' scores flash on the bottom line, and the mouse works too: click a tab, a game or a team, scroll with the wheel. A Settings tab changes every option, shows how every data source is doing, and lists every key. In Kitty or Ghostty the title is a real picture and the real team logos run down every list.
+It opens on an Overview of your favorite teams - each one's latest result and next game under a retro SPORTS TERMINAL title - with every league's games today underneath: live now, coming up, final. Pick any team in the standings for its team page: the whole season game by game beside a dashboard of it - every game's margin as a bar chart, the next game with its line, the division race, the season's splits, a report card and the road ahead. Press Z on any game for the Game Center, a full-screen live scoreboard drawn for its sport - the football field, the baseball diamond, the basketball court with every shot, the hockey rink with every shot on goal, the soccer match timeline - with win probability and the last plays; on an Olympic event, the podium. A BottomLine ticker pages through the day's scores while you work, a live wire crawls above it while a league's games are on - every goal and power play, every run and big night, every touchdown - as it happens, your teams' scores flash on the bottom line, and the mouse works too: click a tab, a game or a team, scroll with the wheel. A Settings tab changes every option, shows how every data source is doing, and lists every key. In Kitty, Ghostty or WezTerm - and in sportst's own window on Windows - the title is a real picture and the real team logos run down every list.
 
 One Python file with no dependencies: the standard library only.
 
@@ -16,7 +16,7 @@ Free and open source under the MIT License. sportst is an independent hobby proj
 
 ## Quick start
 
-You need Linux, macOS or Windows 10 or 11, Python 3.9 or newer, and a terminal with UTF-8 and 256 colours. Nothing else - sportst is one Python file that uses only the standard library. (Windows: section 2, "On Windows".)
+You need Linux, macOS or Windows 10 or 11, Python 3.9 or newer, and a terminal with UTF-8 and 256 colours. Nothing else - sportst is one Python file that uses only the standard library. (Windows: section 2, "On Windows" - or, since 7.4.0, the ready-made sportst-windows zip from this repository's Releases page, which needs nothing installed.)
 
 ```bash
 # get it: clone this repository, or download just the sportst file from it
@@ -148,7 +148,7 @@ A BottomLine ticker over the bottom line pages through every league's scores, yo
 
 A Settings tab that changes every option while the app runs - each group of settings, and each part of About sportst, on a card of its own - and shows sportst's version, files and cache, every free data source with how its requests are going, and every key and command-line option.
 
-It also looks the part: every team in its own colours, meters drawn like an old stereo's LED level meter (or five other ways, a 1980s terminal's shaded blocks among them), team badges like a 1980s TV score bug - the team's letters on its colours - beside the Game Center's scores and under a final, and four retro broadcast colour schemes - ESPN, ABC Sports, CBS Sports and NBC Sports styles - or, with CRT mode on, an old green, amber or white phosphor screen with scanlines, glow, burn-in, a power-on sweep and self test, text typed out as down a slow line, blinking alerts, numbers that flash as they change, a curved face and a bezel, every effect turned up or down to taste on its own card - and the line that sets a bitmap-style font in your terminal. In a terminal that shows pictures, Kitty or Ghostty, sportst notices on its own and shows the real thing instead: the SPORTS TERMINAL title as a picture, the real team logos - big in the Game Center and on a team's page, small down the Scoreboard, the standings, the schedules and your teams on the Overview - and Kim's original portrait (section 14). Every screen can also be printed as plain text for scripts (section 18). The keys that matter on each screen are always listed along the bottom line.
+It also looks the part: every team in its own colours, meters drawn like an old stereo's LED level meter (or five other ways, a 1980s terminal's shaded blocks among them), team badges like a 1980s TV score bug - the team's letters on its colours - beside the Game Center's scores and under a final, and four retro broadcast colour schemes - ESPN, ABC Sports, CBS Sports and NBC Sports styles - or, with CRT mode on, an old green, amber or white phosphor screen with scanlines, glow, burn-in, a power-on sweep and self test, text typed out as down a slow line, blinking alerts, numbers that flash as they change, a curved face and a bezel, every effect turned up or down to taste on its own card - and the line that sets a bitmap-style font in your terminal. In a terminal that shows pictures - Kitty, Ghostty or WezTerm, and sportst's own window on Windows - sportst notices on its own and shows the real thing instead: the SPORTS TERMINAL title as a picture, the real team logos - big in the Game Center and on a team's page, small down the Scoreboard, the standings, the schedules and your teams on the Overview - and Kim's original portrait (section 14). Every screen can also be printed as plain text for scripts (section 18). The keys that matter on each screen are always listed along the bottom line.
 
 ## 2. Install
 
@@ -173,7 +173,7 @@ sudo pacman -S python           # Arch
 brew install python             # macOS with Homebrew
 ```
 
-A terminal that does UTF-8 and at least 256 colours. Any modern Linux terminal (GNOME Terminal, Konsole, Tilix, Kitty, Alacritty, WezTerm, xterm), macOS's Terminal or iTerm2, and Windows Terminal all qualify. The minimum size is 50 columns by 10 rows; 110 columns or more gives the side-by-side panes, and around 190 fits everything at once. Kitty and Ghostty can also show pictures, and sportst uses that there: the SPORTS TERMINAL title as a picture, the real team logos (small ones down every list) and Kim's original portrait. Every other terminal gets them drawn in text (section 14).
+A terminal that does UTF-8 and at least 256 colours. Any modern Linux terminal (GNOME Terminal, Konsole, Tilix, Kitty, Alacritty, WezTerm, xterm), macOS's Terminal or iTerm2, and Windows Terminal all qualify. The minimum size is 50 columns by 10 rows; 110 columns or more gives the side-by-side panes, and around 190 fits everything at once. Kitty, Ghostty and WezTerm (with its Kitty graphics turned on) can also show pictures, and sportst uses that there: the SPORTS TERMINAL title as a picture, the real team logos (small ones down every list) and Kim's original portrait. Every other terminal gets them drawn in text (section 14).
 
 An internet connection. Nothing is downloaded at install time; the scores are fetched while it runs.
 
@@ -252,7 +252,7 @@ Other terminal windows that were already open need to be closed and opened again
 ### Step 5 - Check it and run it
 
 ```
-sportst --version               # sportst 7.3.2
+sportst --version               # sportst 7.4.0
 sportst --scores -L nba         # plain text: a quick network check
 sportst                         # the app
 ```
@@ -303,7 +303,17 @@ Everything above works as written in macOS's Terminal, iTerm2, Kitty or Ghostty;
 
 ### On Windows
 
-Since 7.0.0 sportst runs on Windows itself. Python on Windows has no curses module, so sportst brings its own: it draws the screen with escape codes and reads the keyboard and mouse from the console, using only what comes with Python.
+There are two ways: sportst's own window, ready to run, or the sportst file in Windows Terminal.
+
+**sportst's own window (since 7.4.0).** A folder that needs nothing installed: its sportst.exe opens sportst in a window of its own that looks as it does in Kitty on Linux - the title picture, the real logos, the rink, the court, the diamond, the strike zone, the rounded chips and the CRT glass. Inside, it is WezTerm (a terminal) set up for sportst, with its own copy of Python. It needs 64-bit Windows 10 (version 1809 or newer) or Windows 11.
+
+1. On this repository's GitHub page, click Releases (on the right), and under the newest release's Assets download sportst-windows-7.4.0.zip (about 54 MB).
+2. Right-click the zip, Extract All..., Extract.
+3. Open the sportst-windows folder and double-click sportst.exe. The first time, Windows may say it protected your PC, because the program is new and not signed: click More info, then Run anyway.
+
+Q quits and closes the window. Ctrl+= and Ctrl+- make the text bigger and smaller (Ctrl+0 puts it back), Alt+Enter or F11 is full screen, Ctrl+Shift+C and Ctrl+Shift+V copy and paste, and every other key goes to sportst. To open on a league, make a shortcut to sportst.exe and add, say, -L nhl after its Target. Settings and favorites go in your user folder, as below, so to upgrade, delete the sportst-windows folder and unzip the new one in its place. README.txt in the folder says what else is in it, and licenses holds the licences of WezTerm, Python and the rest.
+
+**The sportst file in Windows Terminal.** Since 7.0.0 sportst runs on Windows itself. Python on Windows has no curses module, so sportst brings its own: it draws the screen with escape codes and reads the keyboard and mouse from the console, using only what comes with Python.
 
 1. Install Python 3.9 or newer from python.org (tick "Add python.exe to PATH" in the installer), or from the Microsoft Store, or with winget install Python.Python.3.12.
 2. Use Windows Terminal (it comes with Windows 11; on Windows 10, from the Microsoft Store). The old console window works too, with fewer colours.
@@ -311,7 +321,7 @@ Since 7.0.0 sportst runs on Windows itself. Python on Windows has no curses modu
 
 ```
 cd $HOME\sportst
-py sportst --version            # sportst 7.3.2
+py sportst --version            # sportst 7.4.0
 py sportst --scores -L nba      # plain text: a quick network check
 py sportst                      # the app; Q quits
 ```
@@ -324,15 +334,15 @@ py sportst                      # the app; Q quits
 
 Settings and favorites go in C:\Users\YOU\.config\sportst, the cache in C:\Users\YOU\.cache\sportst. Clips play through mpv for Windows if it is on the PATH (winget install mpv), or open in your browser.
 
-What looks different: no terminal on Windows shows pictures the way sportst sends them (Kitty's graphics protocol with Unicode placeholders), so the logos, the rink, the court, the diamond and the strike zone are drawn in text, and CRT mode has its colours, trails, burn-in and sweep but not the glass. If a logo or a meter shows empty boxes, the font lacks the sextant characters: set "logo_art": "quadrants" (step 6), or use Cascadia Code 2404 or newer.
+What looks different in Windows Terminal: it does not show pictures the way sportst sends them (Kitty's graphics protocol), so the logos, the rink, the court, the diamond and the strike zone are drawn in text, and CRT mode has its colours, trails, burn-in and sweep but not the glass. sportst's own window (above) shows all of it. If a logo or a meter shows empty boxes, the font lacks the sextant characters: set "logo_art": "quadrants" (step 6), or use Cascadia Code 2404 or newer.
 
-For the full picture on Windows, run the Linux version in WSL 2 with Kitty: in PowerShell as administrator wsl --install (then restart), and in the Ubuntu window sudo apt install kitty python3, then start kitty from there (Windows 11 shows Linux windows on its own desktop) and follow the Linux steps above inside it. To copy the file in from Windows:
+Another way to the full picture on Windows is the Linux version in WSL 2 with Kitty: in PowerShell as administrator wsl --install (then restart), and in the Ubuntu window sudo apt install kitty python3, then start kitty from there (Windows 11 shows Linux windows on its own desktop) and follow the Linux steps above inside it. To copy the file in from Windows:
 
 ```
 cp /mnt/c/Users/YOUR-WINDOWS-NAME/Downloads/sportst ~/
 ```
 
-### Upgrading from an earlier version (for example 7.3.1 to 7.3.2)
+### Upgrading from an earlier version (for example 7.3.2 to 7.4.0)
 
 Your settings and favorites live in ~/.config/sportst and are not touched by an upgrade, so this only swaps the program file. (6.15.0 changed the look a new install starts with - the Retro NBC Sports scheme on ink, logos in blocks, CRT mode on in colour; a config.json that sportst wrote keeps every setting it had, and one written by hand gets the new defaults only for what it leaves out.)
 
@@ -373,12 +383,12 @@ chmod +x ~/.local/bin/sportst
 6. Check it:
 
 ```
-sportst --version               # sportst 7.3.2
+sportst --version               # sportst 7.4.0
 sudo apt install mpv            # optional: hear clips in the terminal
 sportst                         # O for Settings: enter opens a group's card
 ```
 
-7. Optional: clear the cache. Nothing in 7.3.2 needs it - it only takes a line of text off the Overview - but it is safe: logos, photos and Olympic pages are simply fetched again:
+7. Optional: clear the cache. Nothing in 7.4.0 needs it - it brings the pictures to WezTerm and to sportst's own window on Windows - but it is safe: logos, photos and Olympic pages are simply fetched again:
 
 ```
 rm -rf ~/.cache/sportst
@@ -413,7 +423,7 @@ rm -rf ~/.cache/sportst          # cached logos, pages, lines
                                    college softball's (7.0.0), the same
 ```
 
-Nothing else is written. While the game's highlights play in their card, their frames pass through the temporary folder on the way to the terminal (it deletes each as it reads it) and mpv keeps a control socket there; both go with the card. If you set XDG_CONFIG_HOME or XDG_CACHE_HOME, those folders are used instead.
+Nothing else is written. (sportst's own window on Windows also keeps a one-line file in the TEMP folder with the size of a character cell, sportst-cell-NUMBER.txt, and deletes it the next time it starts after that window has closed.) While the game's highlights play in their card, their frames pass through the temporary folder on the way to the terminal (it deletes each as it reads it) and mpv keeps a control socket there; both go with the card. If you set XDG_CONFIG_HOME or XDG_CACHE_HOME, those folders are used instead.
 
 ### If something goes wrong
 
@@ -436,6 +446,18 @@ A version before 7.0.0 on Windows' own Python. 7.0.0 brings its own curses there
 **On Windows: boxes where the logos or meters should be**
 
 The terminal's font lacks the sextant characters: set "logo_art": "quadrants" in the config, or install Cascadia Code 2404 or newer. Run sportst in Windows Terminal rather than the old console window for its colours.
+
+**On Windows: sportst.exe says a file is missing, or the window opens and closes at once**
+
+sportst.exe needs the rest of its folder: unzip the whole zip (Extract All) and open sportst.exe from the folder that makes, not from inside the zip. If the window still closes at once, open the folder in File Explorer, type cmd in the address bar and press enter, and in the window that opens run sportst's own check, which prints what went wrong:
+
+```
+python\python.exe app\sportst --scores -L nba
+```
+
+**On Windows: sportst's window stays black or draws slowly**
+
+WezTerm draws with the graphics card through OpenGL. Open app\sportst.lua in the folder with Notepad, add the line config.front_end = 'WebGpu' (or 'Software', which needs no graphics card but is slower) above the last line, return config, save, and start sportst.exe again.
 
 **"sportst: not a terminal"**
 
@@ -1663,9 +1685,9 @@ And many programs have a baseball mark of their own, the one on their caps. Thos
 
 Logos kept by 6.0.0 for college baseball were the mixed-up ones; 6.1.0 keeps its college baseball logos under new file names, so they are all fetched again and the old files are simply never read (deleting ~/.cache/sportst/logos/cbase-*.png is safe).
 
-### Real pictures in Kitty and Ghostty
+### Real pictures in Kitty, Ghostty and WezTerm
 
-Kitty and Ghostty can show real images inside the terminal, and sportst uses them when it finds itself in one:
+Kitty, Ghostty and WezTerm can show real images inside the terminal, and sportst uses them when it finds itself in one. WezTerm joined them in 7.4.0: it needs its Kitty graphics turned on (config.enable_kitty_graphics = true in its wezterm.lua), and sportst's own window on Windows is WezTerm with them on. Wherever this README says Kitty and Ghostty, WezTerm counts too:
 
 - **The title.** The Overview's SPORTS TERMINAL is drawn as a picture at the terminal's own pixel size: the same block letters, leaning forward in a chrome blend of your colour scheme's colours with a bright glint, a light rim and a deep shadow, speed lines behind and racing stripes underneath. It takes the same rows as the text title, and it is redrawn when you change the scheme.
 - **Big logos.** The real team logos in place of the badges (or the logos drawn in blocks): beside the Game Center's score, under a final on the Scoreboard and on a team's page.
@@ -1676,11 +1698,11 @@ Kitty and Ghostty can show real images inside the terminal, and sportst uses the
 - **Players' photos.** On a Boxscore with players' cards (the NHL, the AHL, basketball and, since 6.17.0, football), the picked player's headshot on his card and the three stars' (the top performers') beside their lines; on hockey's Plays, the scorer's beside the picked goal. (In text, a player's card shows his photo drawn in blocks when Team logos is drawn, else his number on a badge in his team's colours.)
 
 - **Pictures under the text (since 6.20.0).** Some charts get a picture laid under their text, the text still drawn over it: the Game Center's **drive chart** - the grass in ten-yard stripes with its yard and goal lines, the end zones striped in the teams' colours, each drive a bar outlined in a light shade of the offense's colours with a point where it ended and a strip of grass between it and the next, a small football and a yellow line to gain on the drive under way, and each drive's result on an outlined card of its own with its chip in the colours of whoever it was for - and every **win probability** (the Game Center's, and Game Stats' and Plays' in football, basketball and baseball): the meter a rounded bar in the two teams' colours split where their chances meet, the game's swing a smooth line over the share of whoever led, shaded in that team's colours from the dashed 50% line. Since 6.21.0 also the Plays tab's **game flow** (football and basketball) - a column chart, each column outlined in a light shade of its team's colours and set apart from the next, the zero line and the periods' starts dashed - and the Betting tab's **margin odds**, a smooth normal curve shaded in the two teams' colours either side of even, with a crisp line along its top, the even line dashed and the spread a gold dashed line. A pop-up over them takes them away until it closes.
-- **Rounded shapes (since 6.20.0).** Kitty and Ghostty draw the Powerline half circles themselves, whatever the font, so there the picked tab, the chips (the ticker's league, LIVE ONLY and upset watch, STILL TO COME, the drive chart's results without pictures, the Game Center's own) and the keys on the bottom line (each on a keycap, the app's name on a chip of its own) have rounded ends; other terminals keep them square, as before.
+- **Rounded shapes (since 6.20.0).** Kitty, Ghostty and (since 7.4.0) WezTerm draw the Powerline half circles themselves, whatever the font, so there the picked tab, the chips (the ticker's league, LIVE ONLY and upset watch, STILL TO COME, the drive chart's results without pictures, the Game Center's own) and the keys on the bottom line (each on a keycap, the app's name on a chip of its own) have rounded ends; other terminals keep them square, as before.
 
 Everything else on the screen stays text and works exactly the same. Setting Team logos to off (Settings, Display) takes the logos away; the title picture and the football stay.
 
-How it knows: before the full-screen app starts, sportst asks the terminal its name and version, asks whether it can take a picture (a Kitty graphics query), and then asks one question every terminal answers, so the wait ends as soon as that answer comes back. Pictures are used when the terminal says it can take them and it is Kitty or Ghostty - the two known to show them the way sportst sends them, as Unicode placeholder cells that curses can draw like any other text. Every other terminal gets text art, and so does Kitty or Ghostty inside tmux or screen, which do not pass the question on. The System card on the Settings tab (About sportst) says what it found, for example "Pictures: real images (kitty answered) · kitty(0.32.2)".
+How it knows: before the full-screen app starts, sportst asks the terminal its name and version, asks whether it can take a picture (a Kitty graphics query), and then asks one question every terminal answers, so the wait ends as soon as that answer comes back. Pictures are used when the terminal says it can take them and it is Kitty, Ghostty or WezTerm. Kitty and Ghostty show them as Unicode placeholder cells that curses can draw like any other text; WezTerm does not draw those cells, so there sportst lays each picture over its own cells itself after every frame (since 7.4.0). Every other terminal gets text art, and so does Kitty, Ghostty or WezTerm inside tmux or screen, which do not pass the question on. Windows gives a program no way to ask the terminal, so there sportst shows pictures only when told: Settings, Pictures, real images, or SPORTST_PICTURES=images in the terminal's environment, which sportst's own window sets (section 17). The System card on the Settings tab (About sportst) says what it found, for example "Pictures: real images (kitty answered) · kitty(0.32.2)".
 
 ```
 "pictures": "auto"     ask the terminal when sportst starts (the
@@ -1740,7 +1762,7 @@ Pick one on the Settings tab (Display, Colour scheme): h / l step through them a
 
 ### CRT mode
 
-Settings → Display → CRT effect turns sportst into an old phosphor terminal - and since 6.15.0 a new install starts with it on: the colour phosphor (the scheme's own colours), every effect at the standard but a finer aperture grille, less bloom and softer focus (4), lighter grain (3) and a faint hum bar (2). A config.json from an earlier version keeps its own settings; Settings → Display → CRT effect turns it off. It comes in two layers, like the real thing: what sportst draws in the text itself, in any colour terminal, and the glass - see-through pictures laid over the text - in a terminal that shows pictures (Kitty, Ghostty).
+Settings → Display → CRT effect turns sportst into an old phosphor terminal - and since 6.15.0 a new install starts with it on: the colour phosphor (the scheme's own colours), every effect at the standard but a finer aperture grille, less bloom and softer focus (4), lighter grain (3) and a faint hum bar (2). A config.json from an earlier version keeps its own settings; Settings → Display → CRT effect turns it off. It comes in two layers, like the real thing: what sportst draws in the text itself, in any colour terminal, and the glass - see-through pictures laid over the text - in a terminal that shows pictures (Kitty, Ghostty, WezTerm).
 
 ```
 Everywhere (any colour terminal)
@@ -1775,7 +1797,7 @@ Everywhere (any colour terminal)
   Update flash       a number that changes when fresh data arrives -
                      a score, a clock, a line - flashes bright for a
                      moment (never a number you changed with a key)
-Kitty and Ghostty, on top
+Kitty, Ghostty and WezTerm, on top
   Scanlines          a thin dark gap between every few rows of pixels
   Aperture grille    a fine red, green and blue stripe, close up
   Bloom              a wide glow round bright text, meters and bars
@@ -1785,6 +1807,7 @@ Kitty and Ghostty, on top
                      right, as from misaligned colour beams
   Vignette           the edges and corners darker than the middle
   Grain              faint moving grain over the whole picture
+                     (not in WezTerm)
   Flicker            a light, uneven flicker of the whole picture
   Hum bar            a faint brighter band drifting down the screen
   Curvature          the tube's face bulging out: the picture's edges
@@ -1797,6 +1820,8 @@ Kitty and Ghostty, on top
 ```
 
 Two of those are as near as a terminal gets. Curvature bends the glass, not the text: the characters and the scanlines stay on their grid, and the rim and the bezel give the bulge. (Until 6.10.2 the scanlines bowed too, but lines that fine, bent across the screen's pixel grid, broke their rhythm into wavy creases - so they stay straight.) The bezel needs room of its own, so while it shows (a screen of 64 columns and 16 rows or more) sportst gives it the outer ring of cells - a row at the top and the bottom, two columns at the left and one at the right - and draws everything inside it.
+
+In WezTerm (since 7.4.0) the glass looks the same but is laid on differently, since WezTerm keeps a picture with the cells under it rather than over the screen: the layers that hold still - scanlines, grille, vignette, glare, curvature, bezel - go on as one picture over everything, laid again only when the screen size or a level changes; the glow is laid again as the text changes (where text has just changed, it can take up to a second to come back); and the flicker and the hum bar are a short loop WezTerm plays on its own clock, so T cannot start the hum bar over there. Grain is left out: WezTerm would have to lay its tiles over the screen again and again.
 
 #### The CRT effects card (Settings → Display → CRT effects)
 
@@ -1814,7 +1839,7 @@ Every effect but the phosphor's colour has a level from 0 to 10. 5 is the standa
 │ ▌ Raised blacks    ▌▌▌▌▌       5  standard          │
 │   Power-on         ▌▌▌▌▌▌▌     7                    │
 │   ...                                               │
-│  On the glass  Kitty, Ghostty                       │
+│  On the glass  Kitty, Ghostty, WezTerm              │
 │   Scanlines        ▌▌▌▌▌▌▌▌    8                    │
 │   Hum bar                      0  off               │
 │   ...                                               │
@@ -2432,6 +2457,20 @@ mouse                  true         clicks and the wheel; false leaves
                                     the mouse to the terminal
 ```
 
+Two environment variables speak for a terminal sportst cannot ask (since 7.4.0; sportst's own window on Windows sets both):
+
+```
+SPORTST_PICTURES=images     real pictures where "pictures" is auto, for a
+                            terminal that shows Kitty's pictures but
+                            cannot be asked (Windows); text keeps them
+                            off. Settings, Pictures still wins.
+SPORTST_CELL_FILE=path      a file holding a character cell's size in
+                            pixels, "9 20", which sportst reads again
+                            whenever it changes, for a terminal that
+                            cannot report it (Windows); the pictures and
+                            the glass are drawn to it
+```
+
 ## 18. Command line
 
 Every view also prints as plain text, in full colour when the output is a terminal and plain when it is a pipe.
@@ -2547,9 +2586,13 @@ Your terminal does not allow palette redefinition, so colours map onto the 256-c
 
 Lower color_floor toward 0.45.
 
+**WezTerm shows the logos and the title in text, not as pictures.**
+
+WezTerm keeps its Kitty graphics off unless told: add config.enable_kitty_graphics = true to ~/.wezterm.lua (or ~/.config/wezterm/wezterm.lua) and start sportst again. Settings, About sportst, System then says "Pictures: real images (wezterm answered)". sportst's own window on Windows has them on already.
+
 **CRT mode: the scanlines or the glow sit a little off the text, or the terminal feels sluggish.**
 
-The glass (section 14) is drawn to the terminal's cell size, which sportst reads when the screen changes size; ctrl-l sends it again. It keeps the terminal redrawing about ten times a second, which a slow or software-only graphics setup feels - on the CRT effects card (Settings → Display → CRT effects) Grain, Flicker and the Hum bar at 0 stop everything that moves on its own, Settings → Display → Pictures → text art takes the glass away and keeps the rest of CRT mode, and CRT effect off takes all of it away. One effect too much or too little - the scanlines too dark, the glow too wide, the slips too often - is a level on that card. Outside Kitty and Ghostty there is no glass at all: the phosphor colours, the power-on sweep, the trails, the burn-in and the slips are the whole effect there.
+The glass (section 14) is drawn to the terminal's cell size, which sportst reads when the screen changes size; ctrl-l sends it again. It keeps the terminal redrawing about ten times a second, which a slow or software-only graphics setup feels - on the CRT effects card (Settings → Display → CRT effects) Grain, Flicker and the Hum bar at 0 stop everything that moves on its own, Settings → Display → Pictures → text art takes the glass away and keeps the rest of CRT mode, and CRT effect off takes all of it away. One effect too much or too little - the scanlines too dark, the glow too wide, the slips too often - is a level on that card. Outside Kitty, Ghostty and WezTerm there is no glass at all: the phosphor colours, the power-on sweep, the trails, the burn-in and the slips are the whole effect there.
 
 **My terminal's colours look odd after a crash.**
 
@@ -2716,6 +2759,8 @@ Logos decode with a small PNG reader built on zlib (png_decode), so they need no
 Curses can only use about 250 colour pairs, so logo art gets its own block of 48, recycled for each new logo. Browsing any number of games never takes pairs away from team colours. Badges (render_badge) are drawn the same way, from a 5 x 7 pixel font (BADGE_FONT, with BADGE_BOLD for the letters that do not survive a doubled stroke), two pixels to a cell.
 
 Real pictures use the Kitty graphics protocol's Unicode placeholders. A picture is sent once into one of twelve numbered slots (200 to 211), and the screen shows it wherever cells hold U+10EEEE with that number as their 256-colour foreground and combining marks for the cell's row and column (past the 64th column the mark is left off and the terminal counts on from the cell to the left, so a picture can be up to 400 cells wide). To curses those cells are just text, so pop-ups, scrolling and redraws need nothing special; image_cells() returns them as ordinary Lines, and Graphics.flush() sends any new pictures after curses has drawn the frame. A slot is keyed by what is in the picture, so a changed picture needs a new key, and the least recently shown slot is reused when all twelve are taken. A list's small logos are one picture per column (logo_strip), each logo shrunk with scale_rgba; cells on a highlighted row ask for the highlight's background (the ":s" on their style). The title is drawn by title_picture() a row of spans at a time, so it takes a few hundredths of a second in pure Python.
+
+WezTerm (7.4.0) shows Kitty's pictures but not its placeholder cells, so there TERMINAL["placements"] is set and Graphics lays the pictures itself: the frame is drawn from the same spans, but App.put writes spaces where a picture's cells go and notes them (note_picture, cover_cells), and after curses has drawn the frame flush_laid() lays each picture over its cells with a=p - one placement per picture, its cells joined into one block where they line up (join), the pictures under text at z -1 (lay_under) - and deletes the ones that went. Those placements carry no placement number on purpose: WezTerm keeps a picture with the cells it covers, and a numbered placement is copied into every cell another picture is laid on, so numbered ones multiply. The CRT glass follows the same rules there (CrtGlass with placements=True): its still layers are one picture made once (build_seal, kitty_blend), the only numbered one, laid last so it stays on top; the flicker and the hum bar are one picture of frames WezTerm plays itself (build_motion, kitty_loop); and settle() lays the lot again in order when something changed, at most once a second (CRT_MEND). The Windows bundle is that WezTerm with ConPTY 1.25 beside it, which hands the escape codes for the pictures through untouched, an embedded Python, and a WezTerm config that sets SPORTST_PICTURES and keeps the cell size in SPORTST_CELL_FILE (read by told_cell()); its build script is attached to the release beside the zip.
 
 A team's page is built from season_numbers() (the season so far from the schedule's games), standings_index() (every team's standings row by id) and opponent_numbers() (the schedule against the standings), then one function per panel - team_card, chart_panel, next_up_panel, division_panel, splits_panel, numbers_panel, report_panel, road_panel, odds_panel - each returning Lines for a given width, laid out by team_page_lines(). A new panel is one more function and one more entry in that list.
 
