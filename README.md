@@ -252,7 +252,7 @@ Other terminal windows that were already open need to be closed and opened again
 ### Step 5 - Check it and run it
 
 ```
-sportst --version               # sportst 7.4.0
+sportst --version               # sportst 7.4.1
 sportst --scores -L nba         # plain text: a quick network check
 sportst                         # the app
 ```
@@ -321,7 +321,7 @@ Q quits and closes the window. Ctrl+= and Ctrl+- make the text bigger and smalle
 
 ```
 cd $HOME\sportst
-py sportst --version            # sportst 7.4.0
+py sportst --version            # sportst 7.4.1
 py sportst --scores -L nba      # plain text: a quick network check
 py sportst                      # the app; Q quits
 ```
@@ -342,7 +342,7 @@ Another way to the full picture on Windows is the Linux version in WSL 2 with Ki
 cp /mnt/c/Users/YOUR-WINDOWS-NAME/Downloads/sportst ~/
 ```
 
-### Upgrading from an earlier version (for example 7.3.2 to 7.4.0)
+### Upgrading from an earlier version (for example 7.4.0 to 7.4.1)
 
 Your settings and favorites live in ~/.config/sportst and are not touched by an upgrade, so this only swaps the program file. (6.15.0 changed the look a new install starts with - the Retro NBC Sports scheme on ink, logos in blocks, CRT mode on in colour; a config.json that sportst wrote keeps every setting it had, and one written by hand gets the new defaults only for what it leaves out.)
 
@@ -383,12 +383,12 @@ chmod +x ~/.local/bin/sportst
 6. Check it:
 
 ```
-sportst --version               # sportst 7.4.0
+sportst --version               # sportst 7.4.1
 sudo apt install mpv            # optional: hear clips in the terminal
 sportst                         # O for Settings: enter opens a group's card
 ```
 
-7. Optional: clear the cache. Nothing in 7.4.0 needs it - it brings the pictures to WezTerm and to sportst's own window on Windows - but it is safe: logos, photos and Olympic pages are simply fetched again:
+7. Optional: clear the cache. Nothing in 7.4.1 needs it - it only changes which team's colour a basketball court's lane takes - but it is safe: logos, photos and Olympic pages are simply fetched again:
 
 ```
 rm -rf ~/.cache/sportst
@@ -650,7 +650,7 @@ Two panes: the home team on the left, the away team on the right, both scrolling
 
 His photo (where the terminal shows pictures; drawn in blocks when Settings has Team logos on drawn; otherwise his number on a badge in his team's colours), who he is (number, position, height, weight, age, which way he shoots, where and when he was born, his draft, his season in the league), his line in this game, his season so far (a goalie's W-L-OT, GAA, SV% and shutouts) with his league rank where he is in the top 25, his last ten as bars (points, or a goalie's save percentage) and, with the room, his games this season. Enter makes the card bigger (and smaller again), W opens his page on ESPN or theahl.com in your browser, and esc lets go of him. A click on a row picks that player; a second click makes his card bigger. The profile comes from ESPN's player pages for the NHL, basketball, football and baseball and from HockeyTech, the AHL's own stats service, for the AHL; it loads in the background and is kept for six hours.
 
-A basketball player's card has his line tonight (points, rebounds, assists, the shooting, steals, blocks, turnovers, +/-, minutes, fouls, offensive and defensive rebounds), his season from his games (a year such as 2025-26 in its place means last season's numbers - a college player before his first game), his last ten as bars with his average, and his games. Under them, when the card has room, **his night**: his points period by period, then every basket and every assist with the clock and the score, his team's first (free throws at one stop of the clock make one row; an and-one says so) - and on a bigger card (enter) **his shots** tonight on a half court, ● made and ○ missed.
+A basketball player's card has his line tonight (points, rebounds, assists, the shooting, steals, blocks, turnovers, +/-, minutes, fouls, offensive and defensive rebounds), his season from his games (a year such as 2025-26 in its place means last season's numbers - a college player before his first game), his last ten as bars with his average, and his games. Under them, when the card has room, **his night**: his points period by period, then every basket and every assist with the clock and the score, his team's first (free throws at one stop of the clock make one row; an and-one says so) - and on a bigger card (enter) **his shots** tonight on a half court, the lane in the other team's colour (the basket he shoots at, since 7.4.1), ● made and ○ missed.
 
 A football player's card (NFL, college football) can be opened from any of his rows - passing, rushing, receiving, defence, kicking, returns. **Tonight** is the row picked, column by column as its table has them (C/ATT, YDS, AVG, TD, INT; CAR; REC; TOT tackles ...), then his other tables short: rush 9-25 is nine carries for 25 yards, rec 5-107 five catches for 107, def 7 tkl 1 sk, kick FG 2/2 XP 2/2. **Season** is his game log's totals - his first category in full (a quarterback's passing, a receiver's catches, a linebacker's tackles), the others short - with his rank where ESPN has him in the top 25; **Last 8** (or 10) bars his yards a game in that category (a defender's tackles, a kicker's points, a punter's average) with the total; and with the room, his games this season, newest first, under each category's name (as many categories as fit across).
 
@@ -998,8 +998,10 @@ basketball under the scores while the game is on (NBA, college,
            left under its logo (● left, ○ used) - all worked out
            from the play by play
            every part on a card of its own: SHOT CHART, each
-           team's shots on its own half court (● made, ○ missed);
-           BY QUARTER (BY HALF in college) over THE GAME - the run
+           team's shots on a half court of its own, the lane in
+           the other team's colour, the basket it shoots at
+           (since 7.4.1; ● made, ○ missed); BY QUARTER (BY HALF
+           in college) over THE GAME - the run
            (points unanswered), lead changes and ties, the biggest
            leads, team fouls this quarter (half), points in the
            paint and on the break, turnovers; TOP PERFORMERS in the
@@ -1476,7 +1478,7 @@ Set "mlb_statcast": false in the config to skip MLB's feed and use ESPN's number
 
 ## 11. Basketball: the shot chart
 
-Press 5 (Plays) on any basketball game - the NBA, the WNBA, men's or women's college basketball. In Kitty and Ghostty (since 7.0.0) the court is a picture: hardwood, the painted lane in the home team's colour, the arc, the circles and the rim, every shot a ring or a dot in its team's colours. Elsewhere it is drawn in braille, as here. The left pane is the game's flow, its biggest runs and the game; since 6.22.0 the **scoring plays** by quarter (or half, in college) with the running score are hidden until **s** shows them - then they are the whole left side, j / k picking one, and s hides them again. The right pane is the shot chart:
+Press 5 (Plays) on any basketball game - the NBA, the WNBA, men's or women's college basketball. In Kitty and Ghostty (since 7.0.0) the court is a picture: hardwood, the painted lane in the home team's colour (since 7.4.1, with V on one team, the other team's: a team shoots at the other team's basket), the arc, the circles and the rim, every shot a ring or a dot in its team's colours. Elsewhere it is drawn in braille, as here. The left pane is the game's flow, its biggest runs and the game; since 6.22.0 the **scoring plays** by quarter (or half, in college) with the running score are hidden until **s** shows them - then they are the whole left side, j / k picking one, and s hides them again. The right pane is the shot chart:
 
 ```
 ⡏⠉⢹⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⢹⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⢹⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⢹⠉⢹
