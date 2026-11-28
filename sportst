@@ -752,7 +752,7 @@ def strf(moment, fmt):
     return moment.strftime(fmt if NOPAD == "%-" else fmt.replace("%-", NOPAD))
 
 APP = "sportst"
-VERSION = "7.4.1"
+VERSION = "7.5.0"
 
 CONFIG_DIR = os.path.join(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), APP
@@ -5610,8 +5610,9 @@ def quadrant_cell(pixels):
     return block_cell(pixels, QUADRANT_CHARS)
 
 
-def render_logo(image, max_cols, max_rows, style="sextants", indent=0):
-    """Lines for a logo no larger than max_cols x max_rows cells.
+def render_logo(image, max_cols, max_rows, style="sextants", indent=0, glow=None):
+    """Lines for a logo no larger than max_cols x max_rows cells; `glow`, a
+    light, lights its outline (7.5.0).
 
     sextants    2 x 3 pixels per cell (Unicode 13, 2020); what "blocks", the
                 default, means too
@@ -5646,6 +5647,8 @@ def render_logo(image, max_cols, max_rows, style="sextants", indent=0):
             tall, cell = 3, sextant_cell
         grid = trim_grid(quantize(logo_cells(image, cols, rows, box, 2, tall), limit=6),
                          2, tall)
+        if glow and grid:
+            grid = glow_outline(grid, glow)
         lines = []
         for y in range(0, len(grid) - tall + 1, tall):
             line = Line().add(pad, "normal")
@@ -5659,6 +5662,8 @@ def render_logo(image, max_cols, max_rows, style="sextants", indent=0):
     grid = trim_grid(quantize(logo_cells(image, cols, rows, box), limit=6))
     if not grid:
         return []
+    if glow:
+        grid = glow_outline(grid, glow)
     lines = []
     for y in range(0, len(grid) - 1, 2):
         top, bottom = grid[y], grid[y + 1]
@@ -6045,6 +6050,134 @@ class LogoStore:
                 self.on_ready()
 
 
+class SheetMaker:
+    """Pictures worked out off the main thread (7.5.0): a logo's glow sheet,
+    a photo's outline. get() gives one made already, else starts making it
+    (the newest asked for first, a few at most waiting) and gives None; one
+    made nudges the loop into a redraw (on_ready)."""
+
+    WAITING = 6
+
+    def __init__(self, on_ready=None, keep=32):
+        self.on_ready = on_ready
+        self.keep = keep
+        self.made = {}          # key -> PNG (None: it could not be made)
+        self.waiting = {}       # key -> its maker, the newest last
+        self.lock = threading.Lock()
+        self.busy = False
+
+    def get(self, key, make):
+        with self.lock:
+            if key in self.made:
+                return self.made[key]
+            if key not in self.waiting:
+                self.waiting[key] = make
+                while len(self.waiting) > self.WAITING:
+                    self.waiting.pop(next(iter(self.waiting)))
+            if not self.busy:
+                self.busy = True
+                threading.Thread(target=self._work, daemon=True).start()
+        return None
+
+    def ready(self, key):
+        """Whether `key` is done with (made, or found not to make)."""
+        with self.lock:
+            return key in self.made
+
+    def _work(self):
+        while True:
+            with self.lock:
+                if not self.waiting:
+                    self.busy = False
+                    return
+                key = next(reversed(self.waiting))
+                make = self.waiting.pop(key)
+            try:
+                png = make()
+            except Exception:  # noqa: BLE001 - a glow is a nicety, never a crash
+                png = None
+            with self.lock:
+                self.made[key] = png
+                while len(self.made) > self.keep:
+                    self.made.pop(next(iter(self.made)))
+            if self.on_ready:
+                self.on_ready()
+
+
+class LeaderBlinks:
+    """The Game Center's leaders as their numbers change (7.5.0): each of a
+    leader's lines is remembered as it was last drawn, and the numbers new
+    in it blink BLINK_TIMES times before they stay; the player's photo's
+    square outline blinks with them (the name, where there is no photo). A blink
+    goes on and off a step at a time, BLINK_HALF seconds at least each
+    way: a frame drawn late makes it slower, never one blink fewer or
+    shorter."""
+
+    def __init__(self):
+        self.game = None
+        self.now = 0.0          # the frame's time (time.monotonic), the App's to set
+        self.seen = {}          # (player, tag, width) -> the line's text
+        self.changes = {}       # (player, tag, width) -> [(start, end)] of its new numbers
+        self.players = {}       # player -> {"step": 0 lit first .. 2 * BLINK_TIMES, "at"}
+
+    def follow(self, game):
+        """The game the Game Center shows: another one starts afresh."""
+        if game != self.game:
+            self.game = game
+            self.seen, self.changes, self.players = {}, {}, {}
+
+    def advance(self, now):
+        """A frame at `now`: each blink a step on whose step has lasted
+        BLINK_HALF (one step a frame at most), and those done dropped."""
+        self.now = now
+        for player, state in list(self.players.items()):
+            if now - state["at"] < BLINK_HALF - 0.001:     # (a frame drawn when due)
+                continue
+            state["step"] += 1
+            # the next step counts from this frame: one that came late (the
+            # loop busy a moment) never cuts the next half short
+            state["at"] = now
+            if state["step"] >= 2 * BLINK_TIMES:
+                del self.players[player]
+                self.changes = {key: ranges for key, ranges in self.changes.items()
+                                if key[0] != player}
+
+    def line(self, player, tag, width, line, now=None):
+        """The line as it is drawn now, its new numbers blinking."""
+        now = self.now if now is None else now
+        key = (player, tag, width)
+        text = line.text
+        old = self.seen.get(key)
+        self.seen[key] = text
+        if old is not None and old != text:
+            ranges = changed_numbers(old, text)
+            if ranges:
+                self.changes[key] = ranges
+                self.players[player] = {"step": 0, "at": now}
+        ranges = self.changes.get(key)
+        on = self.lit(player)
+        if not ranges or on is None:
+            return line
+        return restyle_ranges(line, ranges, "blinknum" if on else None)
+
+    def lit(self, player, now=None):
+        """While a leader's numbers blink, whether the outline shows now
+        (True, False); None when they do not."""
+        state = self.players.get(player)
+        return None if state is None else state["step"] % 2 == 0
+
+    def name(self, line, player, length, now=None):
+        """The line with its first `length` characters (the name) lit while
+        the numbers blink: the outline, where there is no photo."""
+        on = self.lit(player, now)
+        return restyle_ranges(line, [(0, length)], "blinkbox") if on else line
+
+    def due(self, now=None):
+        """When the next blink step is due; None with none going."""
+        times = [state["at"] + BLINK_HALF for state in self.players.values()]
+        return min(times) if times else None
+
+
 # --------------------------------------------------------------------------
 # pictures: team badges, and real images in terminals that can show them
 # --------------------------------------------------------------------------
@@ -6265,9 +6398,9 @@ def pixel_lines(grid):
     return lines
 
 
-def render_badge(team, league, max_cols, max_rows):
+def render_badge(team, league, max_cols, max_rows, glow=None):
     """A team's badge in at most max_cols x max_rows cells (six rows), or []
-    when it does not fit."""
+    when it does not fit; `glow`, a light, lights its outline (7.5.0)."""
     if max_rows < 6:
         return []
     text = re.sub(r"[^A-Z0-9&.'-]", "", (team.get("abbr") or "").upper())[:5]
@@ -6277,8 +6410,263 @@ def render_badge(team, league, max_cols, max_rows):
     for bold, pad in ((True, 2), (False, 2), (False, 1)):
         grid = badge_pixels(text, colours, bold, pad)
         if len(grid[0]) <= max_cols:
-            return pixel_lines(grid)
+            return pixel_lines(glow_outline(grid, glow) if glow else grid)
     return []
+
+
+# -- a logo lit up, a photo outlined (7.5.0) ------------------------------------
+#
+# A team that scores in the Game Center has its logo's outline pulse with
+# light for GLOW_GAME seconds, and the winner's logo on the Scoreboard pulses
+# for GLOW_FINAL seconds when its finished game is picked: pulses of
+# GLOW_PULSE steps, GLOW_STEP seconds each, in the team's two colours in
+# turn. Where the terminal shows pictures the glow is one tall picture, its
+# frames one under another (glow_sheet), made off the main thread and sent
+# once: a frame is shown by which rows of it the placeholder cells name, so
+# nothing more goes to the terminal while it pulses. In text the outline's
+# pixels are lit (glow_outline).
+GLOW_STEP = 1 / 12
+GLOW_PULSE = (0, 1, 2, 3, 2, 1)         # the light's level a step: 0 none, 3 brightest
+GLOW_LEVELS = (0.0, 0.42, 0.72, 1.0)    # how strong each level is
+GLOW_FRAMES = 7         # a sheet's frames: the logo, then 3 levels of each colour
+GLOW_GAME = 3.0         # seconds a score lights its team's logo in the Game Center
+GLOW_FINAL = 5.0        # seconds a final lights the winner's logo on the Scoreboard
+GLOW_APART = 9000       # colours closer than this (color_distance) are one light
+# A leader's numbers changing in the Game Center: the new ones blink
+# BLINK_TIMES times, BLINK_HALF seconds on and off, the player's photo's
+# square outline (in BLINK_YELLOW) with them - or, without a photo, the name
+BLINK_HALF = 0.12
+BLINK_TIMES = 5
+BLINK_YELLOW = (255, 214, 0)
+
+
+def glow_phase(start, now, length):
+    """(colour 0 or 1, level 0-3) of a glow that started at `start` and
+    lasts `length` seconds, or None outside it."""
+    t = now - start
+    if t < 0 or t >= length:
+        return None
+    pulse, at = divmod(int(t / GLOW_STEP), len(GLOW_PULSE))
+    return pulse % 2, GLOW_PULSE[at]
+
+
+def glow_next(start, now):
+    """When the glow's next step is due."""
+    return start + (int((now - start) / GLOW_STEP) + 1) * GLOW_STEP
+
+
+def glow_frame(phase):
+    """A glow sheet's frame for a phase: 0 the logo as it is, 1-3 the first
+    colour's levels, 4-6 the second's."""
+    if not phase or not phase[1]:
+        return 0
+    colour, level = phase
+    return 1 + colour * 3 + (min(3, level) - 1)
+
+
+def glow_light(rgb):
+    """A colour as light: bright enough to glow on a dark screen, its hue
+    kept (black and greys become a pale silver)."""
+    r, g, b = (c / 255 for c in rgb)
+    high, low = max(r, g, b), min(r, g, b)
+    if high < 0.05 or high - low < 0.08:
+        level = max(0.82, high)
+        return tuple(round(255 * level) for _ in range(3))
+    scale = max(1.0, 0.92 / high)
+    return tuple(min(255, round(c * 255 * scale)) for c in (r, g, b))
+
+
+def glow_colours(league, team):
+    """A team's two colours as the glow's light, (first, second): its own
+    colour and its second (ESPN's alternate), white standing in for a second
+    that is missing or too like the first."""
+    first = glow_light(hex_to_rgb("#" + team_hex(league, team)) or (255, 255, 255))
+    alt = hex_to_rgb("#" + str(team.get("alt_color") or "").lstrip("#"))
+    second = glow_light(alt) if alt else None
+    if second is None or color_distance(first, second) < GLOW_APART:
+        second = (255, 255, 255)
+        if color_distance(first, second) < GLOW_APART:
+            second = (255, 196, 40)
+    return first, second
+
+
+def glow_dim(rgb, level):
+    """A light at a level (1-3), for text."""
+    share = GLOW_LEVELS[max(0, min(3, level))]
+    return tuple(round(c * (0.25 + 0.75 * share)) for c in rgb)
+
+
+def box_blur(values, width, height, radius):
+    """Values (width x height, row by row) averaged over a square of
+    2 * radius + 1 on a side, outside counting as nothing: a list."""
+    from itertools import accumulate
+    size = 2 * radius + 1
+    pad = [0] * (radius + 1)
+    tail = [0] * radius
+    across = [0] * (width * height)
+    for y in range(height):
+        sums = list(accumulate(pad + list(values[y * width:(y + 1) * width]) + tail))
+        across[y * width:(y + 1) * width] = [(sums[x + size] - sums[x]) // size
+                                             for x in range(width)]
+    out = [0] * (width * height)
+    for x in range(width):
+        sums = list(accumulate(pad + across[x::width] + tail))
+        out[x::width] = [(sums[y + size] - sums[y]) // size for y in range(height)]
+    return out
+
+
+def fitted_rgba(image, width, height):
+    """An RGBA image scaled to fit width x height pixels and centred on a
+    clear canvas of that size, as the terminal shows a picture in its
+    cells: a bytearray."""
+    src_w, src_h, _ = image
+    scale = min(width / src_w, height / src_h)
+    tw, th = max(1, min(width, round(src_w * scale))), max(1, min(height, round(src_h * scale)))
+    _, _, small = scale_rgba(image, tw, th)
+    canvas = bytearray(width * height * 4)
+    left, top = (width - tw) // 2, (height - th) // 2
+    for y in range(th):
+        at = ((top + y) * width + left) * 4
+        canvas[at:at + tw * 4] = small[y * tw * 4:(y + 1) * tw * 4]
+    return canvas
+
+
+def glow_sheet(image, cols, rows, cell, colours):
+    """A logo's glow as one PNG (GLOW_FRAMES frames of cols x rows cells at
+    the cell's size, one under another): the logo as it is, then with its
+    outline lit in each colour at three levels - a halo spreading from its
+    edges into the clear around it, and its outermost pixels turned to the
+    light. None when the logo will not do."""
+    if isinstance(image, (bytes, bytearray)):
+        image = png_decode(image)
+    if not image or cols < 1 or rows < 1:
+        return None
+    cw, ch = max(1, round(cell[0])), max(1, round(cell[1]))
+    width, height = cols * cw, rows * ch
+    base = fitted_rgba(image, width, height)
+    alpha = base[3::4]
+    reach = max(2, round(min(width, height) * 0.045))
+    halo = box_blur(box_blur(alpha, width, height, reach), width, height, reach)
+    rim = box_blur(alpha, width, height, max(1, round(min(width, height) * 0.018)))
+    # the pixels the light touches: (index, halo 0-1, edge 0-1)
+    lit = []
+    for i in range(width * height):
+        a = alpha[i]
+        glow = min(1.0, halo[i] / 255 * 2.6) if a < 250 else 0.0
+        edge = min(1.0, (255 - rim[i]) / 255 * 3.2) * a / 255 if a else 0.0
+        if glow > 0.02 or edge > 0.02:
+            lit.append((i, glow, edge))
+    frames = [bytes(base)]
+    for light in colours:
+        hot = tuple(round(c + (255 - c) * 0.45) for c in light)
+        for level in (1, 2, 3):
+            strength = GLOW_LEVELS[level]
+            frame = bytearray(base)
+            for i, glow, edge in lit:
+                at = i * 4
+                la = frame[at + 3] / 255
+                ha = glow * strength * 0.92 * (1 - la)
+                out_a = la + ha
+                if out_a <= 0.004:
+                    continue
+                mix = [(frame[at + k] * la + light[k] * ha) / out_a for k in range(3)]
+                stroke = edge * strength
+                if stroke:
+                    mix = [m + (hot[k] - m) * stroke for k, m in enumerate(mix)]
+                frame[at:at + 4] = bytes((min(255, round(mix[0])), min(255, round(mix[1])),
+                                          min(255, round(mix[2])),
+                                          min(255, round(out_a * 255))))
+            frames.append(bytes(frame))
+    return png_encode(width, height * len(frames), b"".join(frames))
+
+
+def outline_sheet(image, cols, rows, cell, colour=BLINK_YELLOW):
+    """A photo as one PNG of two frames of cols x rows cells, one under the
+    other: as it is, and inside a square outline in `colour`."""
+    if isinstance(image, (bytes, bytearray)):
+        image = png_decode(image)
+    if not image or cols < 1 or rows < 1:
+        return None
+    cw, ch = max(1, round(cell[0])), max(1, round(cell[1]))
+    width, height = cols * cw, rows * ch
+    plain = fitted_rgba(image, width, height)
+    framed = bytearray(plain)
+    line = max(2, round(min(width, height) * 0.045))
+    ink = bytes(colour) + b"\xff"
+    for y in range(height):
+        if y < line or y >= height - line:
+            framed[y * width * 4:(y + 1) * width * 4] = ink * width
+        else:
+            framed[y * width * 4:(y * width + line) * 4] = ink * line
+            framed[((y + 1) * width - line) * 4:(y + 1) * width * 4] = ink * line
+    return png_encode(width, height * 2, bytes(plain) + bytes(framed))
+
+
+def glow_outline(grid, light):
+    """A logo's pixels (rows of RGB, None clear) with its outline lit in
+    `light`, for text: the clear pixels touching it and its own outermost
+    ones (beside a clear pixel or the edge)."""
+    height = len(grid)
+    width = len(grid[0]) if height else 0
+    out = [row[:] for row in grid]
+    for y in range(height):
+        for x in range(width):
+            if grid[y][x] is None:
+                if any(grid[yy][xx] is not None
+                       for yy in range(max(0, y - 1), min(height, y + 2))
+                       for xx in range(max(0, x - 1), min(width, x + 2))):
+                    out[y][x] = light
+            elif x in (0, width - 1) or y in (0, height - 1) or \
+                    None in (grid[y - 1][x], grid[y + 1][x], grid[y][x - 1], grid[y][x + 1]):
+                out[y][x] = light
+    return out
+
+
+def changed_numbers(old, new):
+    """[(start, end)] of the numbers in `new` that `old` did not have where
+    they stand: the words with a digit in them that changed or came."""
+    import difflib
+    pattern = re.compile(r"[^\s,·/()]+")
+    before = [m.group() for m in pattern.finditer(old)]
+    after = list(pattern.finditer(new))
+    words = [m.group() for m in after]
+    ranges = []
+    for op, _, _, j1, j2 in difflib.SequenceMatcher(None, before, words,
+                                                    autojunk=False).get_opcodes():
+        if op in ("replace", "insert"):
+            ranges.extend((after[j].start(), after[j].end()) for j in range(j1, j2)
+                          if any(ch.isdigit() for ch in words[j]))
+    return ranges
+
+
+def restyle_ranges(line, ranges, style=None):
+    """The line with the characters in `ranges` [(start, end)] in `style`,
+    or blanked (spaces, "blinkoff") with None."""
+    if not ranges:
+        return line
+    marked = set()
+    for start, end in ranges:
+        marked.update(range(start, end))
+    out = Line()
+    at = 0
+    for text, span_style in line:
+        run, run_style = "", None
+        for offset, ch in enumerate(text):
+            hit = at + offset in marked
+            here = (style or "blinkoff") if hit else span_style
+            shown = " " if hit and style is None else ch
+            if run and here != run_style:
+                out.append((run, run_style))
+                run = ""
+            run_style = here
+            run += shown
+        if run:
+            out.append((run, run_style))
+        at += len(text)
+    for name in ("click", "play_ref", "play_first", "section", "player_ref", "tag"):
+        if hasattr(line, name):
+            setattr(out, name, getattr(line, name))
+    return out
 
 
 # real images: the Kitty graphics protocol with Unicode placeholders
@@ -6301,7 +6689,7 @@ LOGO_IMAGE_PX = 256     # logos fetched at this size for real images
 # it shows Kitty's pictures but not its placeholder cells (WezTerm, 7.4.0),
 # so each picture is laid over its cells after every frame (Graphics)
 TERMINAL = {"name": "", "graphics": False, "images": False, "why": "not checked",
-            "placements": False}
+            "placements": False, "kind": "", "version": (), "frames": False, "sync": False}
 # Windows has no way to ask the terminal what it can do, so a terminal that
 # shows pictures there can say so in the environment: SPORTST_PICTURES=images
 # (or text) answers for "auto" (Settings, Pictures). The Windows bundle sets
@@ -6312,15 +6700,43 @@ PICTURES_ENV = "SPORTST_PICTURES"
 CELL_FILE_ENV = "SPORTST_CELL_FILE"
 
 
+# What the start-up probe learnt beyond the terminal's name (7.5.0): whether
+# it draws a frame as one (synchronized output, DEC mode 2026) and whether it
+# keeps frames of a picture (Kitty's a=f: Kitty, Ghostty from 1.4); None
+# where it was not asked.
+PROBED = {"sync": None, "frames": None}
+
+
+def _probe_reply(fd, timeout):
+    """What the terminal sends back up to its device-attributes reply (or
+    the timeout, for a terminal that stays silent)."""
+    import select
+    data = b""
+    end = time.time() + timeout
+    while time.time() < end:
+        ready, _, _ = select.select([fd], [], [], max(0.0, end - time.time()))
+        if not ready:
+            break
+        chunk = os.read(fd, 4096)
+        if not chunk:
+            break
+        data += chunk
+        if re.search(rb"\x1b\[\?[\d;]*c", data):
+            break
+    return data
+
+
 def probe_terminal(timeout=1.0):
     """(name, graphics) as the terminal reports them: its name from XTVERSION
     when it answers, and whether it accepts a Kitty graphics query. Sent
     before curses starts; the reply to the device-attributes request that
     follows (which nearly every terminal answers, at once) ends the wait, so
     the timeout only matters for a terminal that stays silent, or a slow
-    link."""
+    link. On the way (7.5.0) it asks whether the terminal draws a frame as
+    one (DECRQM 2026) and, where pictures work, whether it keeps a
+    picture's frames (a one-pixel picture given a second frame, then
+    deleted): PROBED."""
     try:
-        import select
         import termios
     except ImportError:
         return "", False
@@ -6331,7 +6747,7 @@ def probe_terminal(timeout=1.0):
         saved = termios.tcgetattr(fd)
     except termios.error:
         return "", False
-    data = b""
+    data = frames = b""
     try:
         quiet = termios.tcgetattr(fd)
         quiet[3] &= ~(termios.ICANON | termios.ECHO)
@@ -6339,18 +6755,14 @@ def probe_terminal(timeout=1.0):
         quiet[6][termios.VTIME] = 0
         termios.tcsetattr(fd, termios.TCSANOW, quiet)
         os.write(sys.stdout.fileno(),
-                 b"\x1b[>0q\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[c")
-        end = time.time() + timeout
-        while time.time() < end:
-            ready, _, _ = select.select([fd], [], [], max(0.0, end - time.time()))
-            if not ready:
-                break
-            chunk = os.read(fd, 4096)
-            if not chunk:
-                break
-            data += chunk
-            if re.search(rb"\x1b\[\?[\d;]*c", data):
-                break
+                 b"\x1b[>0q\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[?2026$p\x1b[c")
+        data = _probe_reply(fd, timeout)
+        if b"\x1b_Gi=31;OK" in data:
+            os.write(sys.stdout.fileno(),
+                     b"\x1b_Ga=t,i=32,s=1,v=1,f=24,t=d,q=2;AAAA\x1b\\"
+                     b"\x1b_Ga=f,i=32,s=1,v=1,f=24,t=d;AAAA\x1b\\"
+                     b"\x1b_Ga=d,d=I,i=32,q=2\x1b\\\x1b[c")
+            frames = _probe_reply(fd, timeout)
     except OSError:
         pass
     finally:
@@ -6360,7 +6772,67 @@ def probe_terminal(timeout=1.0):
             pass
     named = re.search(rb"\x1bP>\|([^\x1b]*)\x1b\\", data)
     name = named.group(1).decode("utf-8", "replace") if named else ""
-    return name, b"\x1b_Gi=31;OK" in data
+    mode = re.search(rb"\x1b\[\?2026;(\d)\$y", data)
+    PROBED["sync"] = bool(mode) and mode.group(1) in (b"1", b"2")
+    graphics = b"\x1b_Gi=31;OK" in data
+    PROBED["frames"] = bool(re.search(rb"\x1b_Gi=32[^;\x1b]*;OK", frames)) if graphics else None
+    return name, graphics
+
+
+KITTY_PLACEHOLDERS = (0, 28)     # the first Kitty to draw pictures in placeholder cells
+GHOSTTY_FRAMES = (1, 4)          # the first Ghostty to keep a picture's frames
+
+
+def terminal_version(name):
+    """The version in a terminal's answer to XTVERSION, as numbers:
+    "kitty(0.32.2)" (0, 32, 2), "ghostty 1.3.1" (1, 3, 1); () for none."""
+    match = re.search(r"(\d+(?:\.\d+)+)", name or "") or re.search(r"(\d+)", name or "")
+    if not match:
+        return ()
+    return tuple(int(part) for part in match.group(1).split(".")[:4])
+
+
+def dotted(version):
+    return ".".join(str(part) for part in version)
+
+
+def terminal_frames(kind, version, probed=None):
+    """Whether the terminal keeps a picture's frames and shows the one it is
+    told to (Kitty's a=f and a=a): its answer when it was asked, else by
+    name - Kitty yes, Ghostty from 1.4 (before that it ignores them, and
+    the CRT glass's flicker and grain would stand still), anything else
+    no. WezTerm plays frames by itself and has its own way (placements)."""
+    if probed is not None:
+        return bool(probed)
+    return kind == "kitty" or (kind == "ghostty" and bool(version) and
+                               version >= GHOSTTY_FRAMES)
+
+
+def terminal_sync(kind, probed=None):
+    """Whether the terminal holds a frame back until all of it has arrived
+    (synchronized output, DEC mode 2026): its answer when it was asked,
+    else Kitty, Ghostty and WezTerm, which all do."""
+    if probed is not None:
+        return bool(probed)
+    return kind in ("kitty", "ghostty", "wezterm")
+
+
+def terminal_features():
+    """What sportst found this terminal does, in words (the System card,
+    7.5.0): its name and version, whether it draws a frame whole
+    (synchronized output) and how pictures and their frames are shown."""
+    kind, version = TERMINAL.get("kind") or "", TERMINAL.get("version") or ()
+    name = f"{kind} {dotted(version)}" if kind and version else \
+        (kind or TERMINAL.get("name") or os.environ.get("TERM", "") or "this terminal")
+    parts = [name, "each frame drawn whole" if TERMINAL.get("sync") else
+             "frames drawn as they come (no synchronized output)"]
+    if TERMINAL.get("images"):
+        parts.append("pictures laid over their cells" if TERMINAL.get("placements") else
+                     "pictures in their cells")
+        if not TERMINAL.get("placements"):
+            parts.append("moving pictures by their frames" if TERMINAL.get("frames") else
+                         "moving pictures as strips (it keeps no frames)")
+    return " · ".join(parts)
 
 
 def choose_pictures(config, probe=probe_terminal):
@@ -6375,7 +6847,13 @@ def choose_pictures(config, probe=probe_terminal):
     else:
         source = "Settings, Pictures"
     if want == "text":
-        TERMINAL.update(images=False, why=f"text art ({source})")
+        # not asked (the choice may be because asking misbehaves here): what
+        # the environment says, for drawing a frame as one
+        kind = ("kitty" if term == "xterm-kitty" or os.environ.get("KITTY_WINDOW_ID") else
+                "ghostty" if term == "xterm-ghostty" or program.lower() == "ghostty" else
+                "wezterm" if program.lower() == "wezterm" else "")
+        TERMINAL.update(images=False, why=f"text art ({source})", kind=kind,
+                        sync=terminal_sync(kind))
         return TERMINAL
     name, graphics = probe()
     lower = name.lower()
@@ -6384,10 +6862,20 @@ def choose_pictures(config, probe=probe_terminal):
             "ghostty" if "ghostty" in lower or term == "xterm-ghostty" or
             program.lower() == "ghostty" else
             "wezterm" if "wezterm" in lower or program.lower() == "wezterm" else "")
+    # the version only from the terminal's own answer (not tmux's, say)
+    version = terminal_version(name) if kind and kind in lower else ()
     TERMINAL.update(name=name or kind or term, graphics=graphics,
-                    placements=kind == "wezterm")
+                    placements=kind == "wezterm", kind=kind, version=version,
+                    frames=terminal_frames(kind, version, PROBED.get("frames")),
+                    sync=terminal_sync(kind, PROBED.get("sync")))
     if want == "images":
         TERMINAL.update(images=True, why=f"real images ({source})")
+    elif graphics and kind == "kitty" and version and version < KITTY_PLACEHOLDERS:
+        # older Kitty answers the query but would print the placeholder
+        # cells as they are
+        TERMINAL.update(images=False, why=f"text art (kitty {dotted(version)} draws no "
+                                          f"pictures in cells: {dotted(KITTY_PLACEHOLDERS)} "
+                                          f"and later do)")
     elif graphics and kind:
         TERMINAL.update(images=True, why=f"real images ({kind} answered)")
     elif graphics:
@@ -6516,12 +7004,13 @@ def underlay_lines(lines, number):
     return out
 
 
-def image_cells(image_id, cols, rows):
+def image_cells(image_id, cols, rows, first=0):
     """Lines of placeholder cells for picture `image_id`: one span a cell, its
     style naming the picture, the row and the column (cell_text spells the
-    cell out when it is drawn)."""
+    cell out when it is drawn). `first`: the picture's row to start from - a
+    frame of a sheet of them, one under another (7.5.0)."""
     return [Line([(PLACEHOLDER, f"!img:{image_id}:{row}:{col}") for col in range(cols)])
-            for row in range(rows)]
+            for row in range(first, first + rows)]
 
 
 def cell_text(text, style):
@@ -6606,11 +7095,13 @@ class Graphics:
         self.under_laid = set()  # (placements) the pictures under the text laid last frame
         self.hold = False        # (placements) CRT mode powering on: no pictures yet
         self.glass = None        # (placements) CRT mode's glass, which lays them in turn
+        self.moving = set()      # the pictures this frame that move (frames of a sheet)
 
-    def place(self, key, png, cols, rows):
+    def place(self, key, png, cols, rows, tinted=False, moving=False):
         """The number to name this picture by at cols x rows cells, sending
         it first if the terminal does not have it yet; None when off or when
-        every slot is on screen already."""
+        every slot is on screen already. `tinted`: already in CRT mode's
+        colours (made off the main thread, 7.5.0)."""
         if not self.enabled or not png or not 0 < cols <= IMAGE_MAX_COLS or \
                 not 0 < rows <= IMAGE_MAX:
             return None
@@ -6628,7 +7119,7 @@ class Graphics:
                 slot = min(idle, key=lambda s: self.last.get(s, -1))
                 self.slots = {k: v for k, v in self.slots.items() if v != slot}
             self.slots[ident] = slot
-            if self.tint:
+            if self.tint and not tinted:
                 png = self.tint(png)
             if self.placing:
                 size = png_size(png)
@@ -6640,6 +7131,8 @@ class Graphics:
             else:
                 self.pending.append(kitty_transmit(IMAGE_BASE + slot, png, cols, rows))
         self.last[slot] = self.frame
+        if moving:
+            self.moving.add(IMAGE_BASE + slot)
         return IMAGE_BASE + slot
 
     def note_cell(self, row, col, number, pic_row, pic_col):
@@ -6856,6 +7349,9 @@ class Graphics:
         self.covered, self.under_laid = set(), set()
         if self.glass is not None:
             self.glass.pictures = ""
+
+
+SYNC_BEGIN, SYNC_END = b"\x1b[?2026h", b"\x1b[?2026l"   # synchronized output (7.5.0)
 
 
 def write_terminal(data):
@@ -7913,7 +8409,14 @@ class CrtGlass:
     else is laid and put back last; the flicker and the hum bar are one
     picture the terminal plays round by itself (it takes no word to pick a
     frame); the glow's layers and the app's pictures go under the seal.
-    The grain is left out there: its tiles would be laid over and over."""
+    The grain is left out there: its tiles would be laid over and over.
+
+    A terminal that keeps one frame of a picture only (`frames` False:
+    Ghostty before 1.4, 7.5.0) is given the flicker's and the grain's frames
+    as one tall picture each, a frame under the one before, and a step
+    shows the next by placing the picture again from that frame's rows
+    (the source rectangle), as the hum bar is moved: before, they stood
+    still there."""
 
     RASTER, VIGNETTE, VEIL, HUM, GRAIN = (CRT_IMAGE_BASE + n for n in range(5))
     SHEEN, BEZEL = CRT_IMAGE_BASE + 11, CRT_IMAGE_BASE + 12
@@ -7927,9 +8430,11 @@ class CrtGlass:
 
     SEAL, MOTION = RASTER, VEIL     # (placements) their picture numbers in WezTerm
 
-    def __init__(self, write, placements=False):
+    def __init__(self, write, placements=False, frames=True):
         self.write = write
         self.placing = bool(placements)
+        self.sheets = not frames and not self.placing
+        self.frame_h = {}           # (sheets) picture -> the height of one of its frames
         self.pictures = ""          # (placements) the app's pictures, as Graphics lays them
         self.due = False            # (placements) to be laid afresh at the next settle
         self.marred = False         # (placements) text drawn since over the layers below
@@ -8020,7 +8525,7 @@ class CrtGlass:
             veil = self.small or (96, max(1, round(96 * height / width)))
             shades = sorted(set(CRT_VEIL))
             self.veil_frames = {alpha: n + 1 for n, alpha in enumerate(shades)}
-            data = kitty_frames(image, [crt_flat(*veil, (0, 0, 0),
+            data = self.stepped(image, [crt_flat(*veil, (0, 0, 0),
                                                  min(255, round(alpha * strength)))
                                         for alpha in shades], *veil)
         elif part == "hum":
@@ -8034,10 +8539,45 @@ class CrtGlass:
             if not strength:
                 return b""
             tile_w, tile_h = self.tile[0] * cw, self.tile[1] * ch
-            data = kitty_frames(image, [crt_grain(tile_w, tile_h, strength)
+            data = self.stepped(image, [crt_grain(tile_w, tile_h, strength)
                                         for _ in range(CRT_GRAIN_FRAMES)], tile_w, tile_h)
         self.parts.add(image)
         return data
+
+    def stepped(self, image, frames, width, height):
+        """A picture sportst steps through: its frames (a=f), or (sheets) the
+        frames one under another as one picture."""
+        if self.sheets:
+            self.frame_h[image] = height
+            return kitty_raw(image, b"".join(bytes(frame) for frame in frames), width,
+                             height * len(frames))
+        return kitty_frames(image, frames, width, height)
+
+    def cut(self, image):
+        """(sheets) The source rectangle's top for the frame a stepped picture
+        shows, as keys for its placement; "" otherwise."""
+        if not self.sheets or image not in self.frame_h:
+            return ""
+        return f",y={(self.frames.get(image, 1) - 1) * self.frame_h[image]}"
+
+    def _veil(self):
+        cols, rows = self.geometry[:2]
+        extra = f",c={cols},r={rows}"
+        if self.sheets and self.VEIL in self.frame_h:
+            extra += self.cut(self.VEIL) + f",h={self.frame_h[self.VEIL]}"
+        return self._put(0, 0, self.VEIL, 14, extra)
+
+    def _grain(self):
+        cols, rows, cw, ch, _ = self.geometry
+        tc, tr = self.tile
+        top = self.cut(self.GRAIN)
+        out, pid = [], 1
+        for ty in range(0, rows, tr):
+            for tx in range(0, cols, tc):
+                out.append(self._put(ty, tx, self.GRAIN, 12, f",w={min(tc, cols - tx) * cw},"
+                                     f"h={min(tr, rows - ty) * ch}{top}", pid))
+                pid += 1
+        return "".join(out)
 
     def redo(self, part):
         """Send one picture again at its effect's level now (or take it
@@ -8095,15 +8635,9 @@ class CrtGlass:
             out.append(self._put(0, 0, self.VIGNETTE, 15,
                                  f",c={cols},r={rows}" if self.scaled else ""))
         if self.VEIL in parts:
-            out.append(self._put(0, 0, self.VEIL, 14, f",c={cols},r={rows}"))
+            out.append(self._veil())
         if self.GRAIN in parts:
-            tc, tr = self.tile
-            pid = 1
-            for ty in range(0, rows, tr):
-                for tx in range(0, cols, tc):
-                    out.append(self._put(ty, tx, self.GRAIN, 12, f",w={min(tc, cols - tx) * cw},"
-                                         f"h={min(tr, rows - ty) * ch}", pid))
-                    pid += 1
+            out.append(self._grain())
         if self.HUM in parts:
             out.append(self._hum())
         if self.SHEEN in parts:
@@ -8139,8 +8673,11 @@ class CrtGlass:
                              (self.VEIL, self.veil_frames.get(CRT_VEIL[beat % len(CRT_VEIL)],
                                                               1))):
             if image in parts and self.frames.get(image, 1) != frame:
-                out.append(f"\x1b_Ga=a,i={image},c={frame},q=2\x1b\\")
                 self.frames[image] = frame
+                if self.sheets:
+                    out.append(self._veil() if image == self.VEIL else self._grain())
+                else:
+                    out.append(f"\x1b_Ga=a,i={image},c={frame},q=2\x1b\\")
         if out:
             self.write(("\x1b7" + "".join(out) + "\x1b8").encode())
 
@@ -8369,6 +8906,13 @@ class CrtScreen:
         # levels and colours in glow_sig
         self.glow_rows = {}
         self.glow_sig = None
+        # the live wire's row on the screen, while its crawl runs (7.5.0): the
+        # typewriter, the trails, the update flash and the glow leave it be,
+        # as each of them caught the moving text and made it hard to read
+        self.crawl = None
+        # the cells that move this frame (7.5.0) - a logo's glow, a leader's
+        # blinking numbers and photo outline - row -> columns, left be the same
+        self.calm = {}
 
     # -- on and off ----------------------------------------------------------
 
@@ -8381,7 +8925,8 @@ class CrtScreen:
         self.boot = now if boot and crt_amount("power") else None
         self.slip = None
         self.slip_at = now + self.slip_gap()
-        self.glass = CrtGlass(write_terminal, placements=app.graphics.placing) \
+        self.glass = CrtGlass(write_terminal, placements=app.graphics.placing,
+                              frames=TERMINAL.get("frames", True)) \
             if app.graphics.enabled else None
         self.graphics = app.graphics
         if app.graphics.placing:
@@ -8626,12 +9171,29 @@ class CrtScreen:
         scr = app.term
         if not self.fits(scr):
             return
+        row = (getattr(app, "wire", None) or {}).get("row")
+        top, left = (tuple(getattr(app.stdscr, "margin", None) or ()) + (0, 0))[:2]
+        self.crawl = None if row is None else row + top
+        if full:
+            self.calm = {y + top: {x + left for x in xs}
+                         for y, xs in (getattr(app, "calm", None) or {}).items()}
         now = time.monotonic()
         if self.boot is not None:
             self.sweep(scr, now)
             return
         self.slip = None                    # a fresh frame puts slipped rows back
-        if full:
+        if full and getattr(app, "anim_frame", False):
+            # a whole frame drawn only for what moves - a logo's glow, a
+            # leader's numbers blinking (7.5.0): typed in again ten times a
+            # second it would flicker, so it is not, and what was still being
+            # typed in or flashing stays so
+            self.burn(now)
+            self.fresh = False
+            if self.typing:
+                self.hide(scr, self.typing["cells"][self.typing["done"]:])
+            if self.flashes:
+                self.paint_flash(scr, "crtflash" if self.flashes["step"] == 0 else "crtflash2")
+        elif full:
             self.burn(now)
             self.start_typing(scr, now)
             self.start_flash(scr, now, every=self.flash_all)
@@ -8664,7 +9226,7 @@ class CrtScreen:
         if full:
             self.glow_stale = True
         if self.boot is None and self.typing is None and self.fits(scr) and \
-                self.grid != self.glow_grid and self.glowing():
+                self.glow_changed() and self.glowing():
             self.glow_due = True
             if time.monotonic() - self.glow_at >= CRT_GLOW_EVERY and \
                     (self.glow_stale or not self.hold_glow):
@@ -8712,6 +9274,7 @@ class CrtScreen:
                 self.blink_epoch, self.blink_phase = None, 0
         if wrote:
             scr.noutrefresh()
+            getattr(app, "begin_sync", lambda: None)()
             curses.doupdate()
             if self.glass:
                 self.glass.marred = True
@@ -8909,12 +9472,14 @@ class CrtScreen:
             clock = self.typing["clock"]
         cells = []
         waiting_rows = {y for y, _ in waiting}
+        crawl, calm = self.crawl, self.calm
         for y, row in enumerate(grid):
             old = prev[y] if same else None
-            if old == row and y not in waiting_rows:
-                continue                    # nothing new in this row
+            if y == crawl or (old == row and y not in waiting_rows):
+                continue                    # nothing new in this row (or the crawl)
+            moving = calm.get(y, ())
             for x, cell in enumerate(row):
-                if cell is None or cell[0][:1] in (" ", ""):
+                if cell is None or cell[0][:1] in (" ", "") or x in moving:
                     continue
                 if old is None or old[x] != cell or (y, x) in waiting:
                     cells.append((y, x))
@@ -8964,12 +9529,15 @@ class CrtScreen:
         limit = max(24, len(grid) * len(grid[0]) // 50)
         waiting = set(self.typing["cells"][self.typing["done"]:]) if self.typing else set()
         cells = []
+        crawl, calm = self.crawl, self.calm
         for y, row in enumerate(grid):
             old = prev[y] if same else None
-            if not every and old == row:
-                continue                    # no number changed in this row
+            if y == crawl or (not every and old == row):
+                continue                    # no number changed in this row (or the crawl)
+            moving = calm.get(y, ())
             for x, cell in enumerate(row):
-                if cell is None or not cell[0][:1].isdigit() or (y, x) in waiting:
+                if cell is None or not cell[0][:1].isdigit() or (y, x) in waiting or \
+                        x in moving:
                     continue
                 if every or (old[x] is not None and old[x][0][:1] != cell[0][:1]):
                     cells.append((y, x))
@@ -9066,11 +9634,13 @@ class CrtScreen:
                 or not crt_amount("trails"):
             return
         found = []
+        crawl, calm = self.crawl, self.calm
         for y, (old_row, new_row) in enumerate(zip(prev, grid)):
-            if old_row == new_row:
+            if old_row == new_row or y == crawl:
                 continue
+            moving = calm.get(y, ())
             for x, (old, new) in enumerate(zip(old_row, new_row)):
-                if old is None or old == new:
+                if old is None or old == new or x in moving:
                     continue
                 was = self.lit(old)
                 if was and not self.lit(new):
@@ -9111,6 +9681,26 @@ class CrtScreen:
         self.slip = (rows, now + random.uniform(0.05, 0.11))
         return True
 
+    def glow_row_seen(self, y, row):
+        """A row of the screen as the glow sees it (7.5.0): the crawl's row
+        dark, and the cells that move - a glow that followed them would
+        trail a step or more behind."""
+        if y == self.crawl:
+            return [None] * len(row)
+        moving = self.calm.get(y)
+        if not moving:
+            return row
+        return [None if x in moving else cell for x, cell in enumerate(row)]
+
+    def glow_changed(self):
+        """Whether the screen has changed since the glow was worked out, what
+        moves aside."""
+        grid, glow = self.grid, self.glow_grid
+        if glow is None or len(glow) != len(grid):
+            return True
+        return any(old != self.glow_row_seen(y, new)
+                   for y, (old, new) in enumerate(zip(glow, grid)))
+
     def send_glow(self, app):
         """Work out the glow from what is on the screen and send it: the
         bloom, the colour fringes and the soft focus, each at its level."""
@@ -9124,7 +9714,7 @@ class CrtScreen:
             return
         bloom_on, fringe_on, focus_on = (crt_amount(key) for key in
                                          ("bloom", "fringes", "focus"))
-        self.glow_grid = [row[:] for row in self.grid]
+        self.glow_grid = [list(self.glow_row_seen(y, row)) for y, row in enumerate(self.grid)]
         if not (bloom_on or fringe_on or focus_on):
             self.glass.show_glow({})
             return
@@ -9895,8 +10485,12 @@ def render_leaders(league, side_list, width):
 
 
 LOGO_MIN_ROWS = 6         # a badge is six rows
-LOGO_PAIRS = 48   # 6 colours + transparent: at most 6 x 7 fg/bg combinations
-LOGO_SLOTS = 14   # a logo needs 6, a badge 4; Ask Kim's portrait needs all 14
+# 6 colours + transparent: at most 6 x 7 fg/bg combinations; two logos and a
+# glow's light around one (7.5.0: 48 before)
+LOGO_PAIRS = 64
+# a logo needs 6, a badge 4; Ask Kim's portrait 14; the Game Center's two
+# logos and the six lights of a glow in text 18 (7.5.0: 14 before)
+LOGO_SLOTS = 20
 LOGO_MAX_ROWS = 8
 LOGO_MAX_COLS = 24
 
@@ -22392,7 +22986,9 @@ def info_scoreboard(league):
          "against the posted number"),
         ("badge", "under a final: the winner's badge, its letters on its colours like "
                   "an old TV score bug - or its real logo, in a terminal that shows "
-                  "pictures (Kitty, Ghostty, WezTerm). Settings, Team logos and Pictures"),
+                  "pictures (Kitty, Ghostty, WezTerm). Settings, Team logos and Pictures. "
+                  "Highlighting the game lights its outline for five seconds, pulsing "
+                  "in the winner's two colours (7.5.0)"),
     ])]
     if league in WIRE_LEAGUES:
         length = {"nfl": "three and a half hours from the kickoff",
@@ -24307,6 +24903,11 @@ def base_styles():
         "livechip": ("#FFFFFF", "#D7263D", curses.A_BOLD),
         "livechipoff": ("#FF5A6A", None, curses.A_BOLD),
         "livedot": ("#FF3B4E", None, curses.A_BOLD),
+        # a leader's new numbers blinking, the name lit (7.5.0); "blinkoff"
+        # the dark half, so CRT mode knows those cells move too
+        "blinknum": ("#FFE14D", None, curses.A_BOLD),
+        "blinkbox": ("#141000", "#FFD400", curses.A_BOLD),
+        "blinkoff": (styles["normal"][0], None, 0),
     })
     return styles
 
@@ -25036,7 +25637,12 @@ HELP_TEXT = [
     ("BottomLine", "the ticker over the bottom line: every league today, ★ yours first"),
     ("Live wire", "every league while games are on: a crawl over the BottomLine - "
                   "goals and power plays, runs and big nights, touchdowns, runs "
-                  "scored, upsets, finals; click one to open its game"),
+                  "scored, upsets, finals; click one to open its game. It moves one "
+                  "cell at a time at a steady pace (7.5.0)"),
+    ("glow (Z)", "a team that scores: its logo's outline pulses in its two colours "
+                 "for three seconds; a final's winner on the Scoreboard for five"),
+    ("blink (Z)", "a leader's numbers that change blink five times, a yellow square "
+                  "round the photo with them"),
     ("★ alerts", "your teams' starts, scores and finals flash on the bottom line; a "
                  "score flashes TOUCHDOWN ARKANSAS over the BottomLine for three seconds"),
     ("Settings O", "Game day: the ticker on / off / auto, the live wire, alerts, the "
@@ -30370,12 +30976,14 @@ def bball_box_refs(summary, event):
     return refs
 
 
-def bball_center_performers(summary, event, league, width, count=3, face=None):
+def bball_center_performers(summary, event, league, width, count=3, face=None, blink=None):
     """The Game Center's TOP PERFORMERS card: each team's best by game score,
     a line each - his name, game score and line - with foul trouble flagged
     while the game is on (two fouls from fouling out, then one) and a player
     who fouled out; where the terminal shows pictures, each team's best in his
-    photo beside them (`face(ref, cols, rows)`)."""
+    photo beside them (`face(ref, cols, rows)`). `blink` (LeaderBlinks,
+    7.5.0): a player's new numbers blink, and the photo's outline with them
+    (the name, for the players without one)."""
     refs = bball_box_refs(summary, event)
     limit = 5 if league in COLLEGE_LEAGUES else 6   # the fouls that put a player out
     live = event["state"] == "in"
@@ -30430,7 +31038,19 @@ def bball_center_performers(summary, event, league, width, count=3, face=None):
             while len(parts) > 1 and len(joint.join(parts)) > left:
                 parts.pop()
             line.add(joint.join(parts), "dim")
-            block.append(fit_line(line, room))
+            line = fit_line(line, room)
+            if blink is not None:
+                ident = str(ref.get("id") or ref["name"])
+                line = blink.line(ident, "line", room, line)
+                lit = blink.lit(ident)
+                if lit is not None and photo and index == ranked[0][1]:
+                    try:
+                        photo = face(dict(ref, outline=lit), 12, len(ranked) + 1) or photo
+                    except Exception:  # noqa: BLE001 - a photo is a nicety
+                        pass
+                elif lit:
+                    line = blink.name(line, ident, len(ref["name"][:name_w]))
+            block.append(line)
         for row in range(max(len(photo), len(block))):
             line = Line()
             if photo_w:
@@ -30444,7 +31064,7 @@ def bball_center_performers(summary, event, league, width, count=3, face=None):
 
 
 def compose_basketball(canvas, y, event, summary, league, width, height, corners=None,
-                       face=None):
+                       face=None, blink=None):
     """Basketball's Game Center under the score band, every part on a card of
     its own. Along the top the shot chart, the score by quarter over the
     game's story, and the top performers in the room under the home team's
@@ -30491,7 +31111,7 @@ def compose_basketball(canvas, y, event, summary, league, width, height, corners
     if perf_on:
         for count in (4, 3, 2, 1):
             performers = bball_center_performers(summary, event, league, perf_w - 4, count,
-                                                  face)
+                                                  face, blink)
             if len(performers) + 2 <= room:
                 break
         if len(performers) + 2 > room:
@@ -30732,6 +31352,7 @@ def football_leader_text(player, value, league, width, positions):
     head = Line().add(name[:width], colour)
     if len(name) + 2 + len(points) <= width:
         head.add(" " * (width - len(name) - len(points)), "normal").add(points, "muted")
+    head.tag = "head"
     abbr, full = football_position_of(player, positions)
     # his number before his position (the box score's, else the roster's):
     # on a narrow card the position and the team shorten, the number stays
@@ -30756,6 +31377,7 @@ def football_leader_text(player, value, league, width, positions):
                 who.add(" · ", "muted")
             if side:
                 who.add(side, THEME.style(league, team, fallback="accent"))
+            who.tag = "who"
             break
     text = [head] + ([who] if who else [])
     order = {kind: index for index, kind in enumerate(FOOTBALL_LEADER_ORDER)}
@@ -30774,38 +31396,53 @@ def football_leader_text(player, value, league, width, positions):
         while len(bits) > 1 and len(", ".join(bits)) > width - 6:
             bits.pop()
         line.add(", ".join(bits), "bold" if not shown else "normal")
-        text.append(fit_line(line, width))
+        line = fit_line(line, width)
+        line.tag = tag
+        text.append(line)
         shown += 1
     return text
 
 
 def football_center_leaders(summary, event, league, width, face=None, rows=None,
-                            positions=None):
+                            positions=None, blink=None):
     """The Game Center's LEADERS card for football: the game's top three
     players by fantasy points (the Boxscore's measure), each in his photo
     where the terminal shows pictures, beside his name and points, his
     position and team, and his line in every table he is in. As many whole
-    players as `rows` holds, a blank line between them when there is room."""
+    players as `rows` holds, a blank line between them when there is room.
+    `blink` (LeaderBlinks, 7.5.0): a leader's new numbers blink, and the
+    photo's outline with them (the name without one)."""
     best = football_best_players(summary, event, 3)
     if not best:
         return []
     known = football_positions(summary, positions)
     cols, tall = CENTER_LEADER_PHOTO
-    photos = []
-    for _, player in best:
-        photo = []
-        if face and width >= 46:
-            try:
-                photo = face({"id": player["id"], "headshot": player["headshot"]}, cols,
-                             tall) or []
-            except Exception:  # noqa: BLE001 - a photo is a nicety
-                photo = []
-        photos.append(photo)
+
+    def photo_of(player, outline=None):
+        if not face or width < 46:
+            return []
+        try:
+            return face({"id": player["id"], "headshot": player["headshot"],
+                         "outline": outline}, cols, tall) or []
+        except Exception:  # noqa: BLE001 - a photo is a nicety
+            return []
+    photos = [photo_of(player) for _, player in best]
     photo_w = max((len(line.text) for photo in photos for line in photo), default=0)
     room = width - (photo_w + 2 if photo_w else 0)
     blocks = []
-    for (value, player), photo in zip(best, photos):
+    for index, ((value, player), photo) in enumerate(zip(best, photos)):
         text = football_leader_text(player, value, league, room, known)
+        if blink is not None:
+            ident = str(player.get("id") or player["name"])
+            text = [blink.line(ident, getattr(line, "tag", n), room, line)
+                    for n, line in enumerate(text)]
+            lit = blink.lit(ident)
+            if lit is not None and photo:
+                photo = photo_of(player, lit) or photo
+            elif lit and text:
+                shown = player["name"] if text[0].text.startswith(player["name"]) else \
+                    player.get("short") or ""
+                text[0] = blink.name(text[0], ident, min(len(shown), room))
         block = []
         for row in range(max(len(photo), len(text))):
             line = Line()
@@ -31022,7 +31659,7 @@ def rink_rows(cols):
 
 
 def compose_cards(canvas, y, event, summary, league, width, height, corners=None,
-                  face=None, positions=None, pictures=False):
+                  face=None, positions=None, pictures=False, blink=None):
     """Football's, hockey's, baseball's and soccer's Game Center under the
     score band, every part on a card of its own, as basketball's is: along
     the top the score by period and the sport's own picture - the field and
@@ -31061,7 +31698,8 @@ def compose_cards(canvas, y, event, summary, league, width, height, corners=None
         right_w = clamp(width * 36 // 100, 50, 70) if width >= 110 else 0
         # no taller than the drive chart's column (its row, the chart's card)
         leaders = football_center_leaders(summary, event, league, right_w - 4, face,
-                                          rows=room - 7, positions=positions) \
+                                          rows=room - 7, positions=positions,
+                                          blink=blink) \
             if right_w else []
         if not leaders:
             right_w = 0
@@ -35200,8 +35838,10 @@ def points_tonight_lines(events, league, width):
 # -- the live wire: a hockey crawl while games are on -------------------------
 
 WIRE_SPEED = 9.0            # cells a second, about a TV crawl's pace
-WIRE_STEP = 0.1             # seconds between steps of the crawl
-WIRE_STEP_MS = 100
+# the crawl moves one cell a beat on a clock of its own (7.5.0): before, it
+# moved as far as the time since the last frame said, 0, 1 or 2 cells at
+# uneven gaps, and that jerking is what made it hard to read
+WIRE_BEAT = 1.0 / WIRE_SPEED
 WIRE_FRESH = 15 * 60        # how long a goal, a fight or a final stays news
 WIRE_LIFE = {"pp": 120, "en": 180, "start": 300}    # news that goes stale sooner
 WIRE_GAP = "     ◆     "
@@ -39329,7 +39969,7 @@ def scorebug_line(info, league, width):
 def compose_center(event, summary, league, width, height, now=None, flash=None,
                    favorites=None, context="", art=None, corners=None, face=None,
                    ball_art=None, bulb_art=None, positions=None, pictures=False,
-                   hockey=None):
+                   hockey=None, blink=None):
     """The whole Game Center as [Line], `height` rows of `width` columns.
     `art(side, cols, rows)`, when given, is each team's badge or logo, set
     beside its score when the screen is big enough; basketball's parts are
@@ -39339,7 +39979,9 @@ def compose_center(event, summary, league, width, height, now=None, flash=None,
     blocks), `bulb_art(text, mode, tone, cols, rows)` the scores' and the
     clock's light bulbs (band_number), and `positions` {athlete id:
     (abbreviation, name)} what football's LEADERS play. `hockey` is a hockey
-    game's live {pp, pp_left, en} for its scorebug (7.0.0)."""
+    game's live {pp, pp_left, en} for its scorebug (7.0.0). `blink`
+    (LeaderBlinks, 7.5.0) blinks a leader's new numbers and the photo's
+    outline."""
     now = now or time.time()
     canvas = Canvas(width, height)
     away, home = event["away"], event["home"]
@@ -39565,11 +40207,12 @@ def compose_center(event, summary, league, width, height, now=None, flash=None,
         canvas.put(y, max(0, (width - len(text)) // 2), text[:width], f"@{fg}:{bg}~b")
         y += 2
     if sport_of(league) == "basketball":
-        compose_basketball(canvas, y, event, summary, league, width, height, corners, face)
+        compose_basketball(canvas, y, event, summary, league, width, height, corners, face,
+                           blink)
         return canvas.rows()
     if sport_of(league) in ("football", "hockey", "baseball", "soccer"):
         compose_cards(canvas, y, event, summary, league, width, height, corners, face,
-                      positions, pictures)
+                      positions, pictures, blink)
         return canvas.rows()
     # the situation
     sport = sport_of(league)
@@ -39874,8 +40517,10 @@ INFO_GAME_DAY = [
                  "crawl runs right to left above the BottomLine (college: the ranked "
                  "games and your teams'). First the news, newest first, then every game "
                  "on, tonight's finals and what is still to come. News stays on it for "
-                 "fifteen minutes. Click an item to open its game; Settings → Game day "
-                 "turns it off"),
+                 "fifteen minutes. It moves one cell at a time, nine a second, on a "
+                 "steady beat of its own (7.5.0), and CRT mode's typewriter, trails "
+                 "and flash leave it be, so it reads smoothly. Click an item to open its "
+                 "game; Settings → Game day turns it off"),
     ("hockey", "GOAL (who, his goals this season, how: power play, short-handed, empty "
                "net; who set it up; tied it, put them ahead, a HAT TRICK; the score "
                "after it), POWER PLAY, EMPTY NET (a goalie pulled late, his team "
@@ -40001,7 +40646,9 @@ INFO_GAME_CENTER = [
                 "Crimson Tide; QB on a narrow screen), and his line in every table he is in "
                 "(PASS 27/37, 304 YDS, 2 TD; RUSH 15 CAR, 52 YDS; DEF 9 TKL, 1 SACK). In "
                 "Kitty, Ghostty or WezTerm each in his photo. As many of the three as the room "
-                "holds"),
+                "holds. When a leader's numbers change, the new ones blink five times "
+                "before they stay, and a square yellow outline blinks round the photo "
+                "with them (the name lights up yellow without one) (7.5.0)"),
     ("the diamond", "baseball, THE DIAMOND: ◆ a runner on that base (in the batting "
                     "team's colour), the count, the outs, who is pitching to whom and how "
                     "each is doing today"),
@@ -40023,8 +40670,9 @@ INFO_GAME_CENTER = [
                        "player two fouls from fouling out in amber and one foul away in "
                        "red, and anyone who fouled out. A narrow card keeps points, "
                        "rebounds and assists; in Kitty, Ghostty or WezTerm each team's best is in "
-                       "his photo. Where the screen has no room for the card, THE GAME "
-                       "names each side's top scorer"),
+                       "the player's photo. Where the screen has no room for the card, THE GAME "
+                       "names each side's top scorer. A player's numbers that change blink "
+                       "five times, the photo's square yellow outline with them (7.5.0)"),
     ("GOALS, GOALIES", "hockey, under the home team's logo: every goal - period, time, "
                        "team, scorer, PP, SH or EN, the assists where they fit - and "
                        "each goalie's saves; BY PERIOD and THE GAME (shots, the strength, "
@@ -40061,6 +40709,12 @@ INFO_GAME_CENTER = [
                    "not"),
     ("flash", "a score flashes across the screen in the scoring team's colours: "
               "TOUCHDOWN, FIELD GOAL, GOAL, RUN SCORES …, and FINAL at the end"),
+    ("glow", "every sport (7.5.0): when a team scores, the outline of its logo pulses "
+             "with light for three seconds, in the team's two colours in turn (LSU's "
+             "purple, then its gold; white where a team has no second colour). With "
+             "pictures (Kitty, Ghostty, WezTerm) the light spreads from the logo's edge; "
+             "in text the logo's outline is lit. CRT mode leaves it be: no typing in "
+             "again, no trails"),
     ("below", "the line score and the team stats on the left; before the game the "
               "line, ESPN's predictor and the weather"),
     ("badge", "beside each score on a big screen, where the digits leave room (a "
@@ -40976,6 +41630,7 @@ def about_system(app, width):
     name = TERMINAL.get("name") or ""
     row("Pictures", TERMINAL.get("why", "") +
         (f" · {name}" if name and name != os.environ.get("TERM") else ""))
+    row("Drawing", terminal_features())
     if app.crt.on:
         current, _ = terminal_font()
         pick = crt_font_key(app.config.get("crt_font"))
@@ -41168,7 +41823,9 @@ def info_settings():
     sections.append(("About sportst (right side)", [
         ("System", "the version, Python and the terminal, what sportst found out about "
                    "pictures, CRT mode, this run, the league, your config file and the "
-                   "cache, how clips and highlights play, your favourites"),
+                   "cache, how clips and highlights play, your favourites. Drawing "
+                   "(7.5.0): the terminal and its version as it answered, whether it "
+                   "draws each frame whole, and how moving pictures are shown there"),
         ("Running", "how long this session has been open, requests made, requests "
                     "waiting, and responses held in memory"),
         ("Config", "where your settings and favourites are saved"),
@@ -41431,6 +42088,22 @@ class App:
         # real pictures, when main() found a terminal that shows them
         self.graphics = Graphics(TERMINAL.get("images"), write_terminal,
                                  placements=TERMINAL.get("placements"))
+        # a frame drawn as one where the terminal can hold it back until all
+        # of it is there (7.5.0): no half-drawn frame between two of the
+        # crawl's steps or a logo's glow (DEC mode 2026)
+        self.sync = bool(TERMINAL.get("sync"))
+        self.synced = False
+        # what moves on the screen without new data (7.5.0): a logo's glow, a
+        # leader's numbers blinking. anim_next: when the next frame of it is
+        # due (time.monotonic); anim_frame: the frame being drawn is only that
+        # (CRT mode types none of it in again)
+        self.anim_next = None
+        self.anim_frame = False
+        self.sheets = SheetMaker(on_ready=self.logo_ready)
+        self.blinks = LeaderBlinks()
+        self.final_glow = {"key": None, "glow": None}
+        self.frames_drawn = 0
+        self.calm = {}                     # screen row -> columns of cells that move
         UNDER["on"] = bool(self.graphics.enabled)
         self.cell = cell_pixels() if self.graphics.enabled else (10.0, 20.0)
         # CRT mode (Settings, Display): its phosphor while it is on
@@ -42867,6 +43540,18 @@ class App:
             top, left = self.stdscr.margin[:2]
             self.crt.record(y + top, x + left, text, attr)
 
+    def begin_sync(self):
+        """The terminal told to hold what follows until end_sync (synchronized
+        output), where it can."""
+        if self.sync and not self.synced:
+            write_terminal(SYNC_BEGIN)
+            self.synced = True
+
+    def end_sync(self):
+        if self.synced:
+            self.synced = False
+            write_terminal(SYNC_END)
+
     def present(self, full=True):
         """Put the frame drawn into stdscr on the screen: in CRT mode with its
         effects drawn over it first and the glass laid on after."""
@@ -42877,6 +43562,7 @@ class App:
             except Exception as exc:  # noqa: BLE001 - an effect must never cost the app
                 self.crt_failed(exc)
         self.stdscr.noutrefresh()
+        self.begin_sync()
         curses.doupdate()
         if crt.on:
             try:
@@ -43197,9 +43883,21 @@ class App:
         self._info_fits = len(lines) <= view
         self.put(top + box_height - 2, left + 3, hint, self.palette("muted"))
 
+    def animate(self, due):
+        """Something on the screen moves on at `due` (time.monotonic): a
+        frame then, drawn as only that (anim_frame)."""
+        if due is not None and (self.anim_next is None or due < self.anim_next):
+            self.anim_next = due
+
     def draw(self):
+        self.anim_next = None
+        self.calm = {}
+        self.graphics.moving = set()
+        self.frames_drawn += 1
+        self.blinks.advance(time.monotonic())
         try:
             self._draw_frame()
+            self.animate(self.blinks.due(time.monotonic()))
         finally:
             if self.show_help or self.show_info or getattr(self, "kim", None) or \
                     getattr(self, "popup", None) or getattr(self, "calendar", None):
@@ -43208,7 +43906,10 @@ class App:
             # the screen in, as placeholder cells would be blank then
             self.graphics.hold = self.crt.on and (self.crt.boot is not None or
                                                   self.crt.typing is not None)
-            self.graphics.flush()      # the pictures this frame named, after curses
+            try:
+                self.graphics.flush()      # the pictures this frame named, after curses
+            finally:
+                self.end_sync()
 
     def put_spans(self, y, x, line):
         """One Line at y, x as it is: no clipping beyond the screen's."""
@@ -43238,11 +43939,29 @@ class App:
         if style and style.startswith("!u:"):
             self.note_underlay(y, x, style)
             style = style.partition("|")[2]
+        if style and self.crt.on and self.moving_style(style):
+            self.calm.setdefault(y, set()).update(range(x, x + len(text)))
         if style and style.startswith("!img:") and self.graphics.placing:
             self.put(y, x, " ", self.palette(style))
             self.note_picture(y, x, style)
             return
         self.put(y, x, cell_text(text, style), self.palette(style))
+
+    def moving_style(self, style):
+        """Whether a span's cells are part of something that moves (7.5.0): a
+        frame of a glow or outline sheet, a logo's outline glowing in text,
+        a leader's blinking number or name - CRT mode's typewriter, trails
+        and update flash leave them be (CrtScreen.calm)."""
+        if style in ("blinknum", "blinkbox", "blinkoff"):
+            return True
+        if style[0] == "@":
+            return style.endswith("~g")
+        if style.startswith("!img:"):
+            try:
+                return int(style.split(":")[1]) in self.graphics.moving
+            except (ValueError, IndexError):
+                return False
+        return False
 
     def put_pill(self, y, x, text, style):
         """A chip in `style`, its first and last spaces its rounded ends where
@@ -43279,29 +43998,108 @@ class App:
         self.graphics.underlay((key, cw, ch), lambda: maker(cw, ch), y + top, x + left,
                                cols, int(band), cw, ch)
 
-    def team_art(self, league, team, cols, rows):
+    def team_art(self, league, team, cols, rows, glow=None):
         """A team's logo for a box of at most cols x rows cells: the real logo
         where the terminal shows pictures, else its badge or its logo drawn in
         blocks (Settings: Team logos, Logo art); [] for none. The caller has
-        started the exact-colour block that a badge or drawn logo uses."""
+        started the exact-colour block that a badge or drawn logo uses.
+
+        `glow` (7.5.0), {"start", "length"}: its outline pulsing with light in
+        the team's two colours from `start` (time.monotonic) for `length`
+        seconds - with pictures, frames of its glow sheet (made beforehand,
+        off the main thread: a glow given without a start is made ready and
+        starts once its sheet is), in text its outline's pixels lit. The
+        sheet is asked for whenever `glow` is given, so it is ready when a
+        glow starts."""
         if not team or self.team_logos == "off" or self.logo_style == "off":
             return []
+        now = time.monotonic()
+        phase = None
+        if glow is not None:
+            if glow.get("start") is None and glow.get("length"):
+                if self.glow_ready(league, team, cols, rows):
+                    glow["start"] = now
+                else:
+                    self.animate(now + 0.25)        # look again soon
+            if glow.get("start") is not None:
+                # each step a frame, and one past the last: the logo as it is
+                phase = glow_phase(glow["start"], now, glow["length"])
+                if phase is not None:
+                    self.animate(glow_next(glow["start"], now))
         if self.graphics.enabled:
             png = self.logos.get(league, team, raw=True)
             size = png_size(png) if png else None
             if size:
                 c, r = fit_cells(size, cols, rows, self.cell)
-                key = ("logo", league, str(team.get("id") or team.get("abbr") or ""))
+                ident = str(team.get("id") or team.get("abbr") or "")
+                if glow is not None and c and r:
+                    lines = self.glow_cells(league, team, ident, png, c, r, phase)
+                    if lines:
+                        return lines
+                key = ("logo", league, ident)
                 image_id = self.graphics.place(key, png, c, r) if c and r else None
                 if image_id:
                     return image_cells(image_id, c, r)
+        light = None
+        if phase is not None and phase[1]:
+            light = glow_dim(glow_colours(league, team)[phase[0]], phase[1])
+        lines = None
         if self.team_logos == "drawn":
             image = self.logos.get(league, team)
             if image is not None:
-                return render_logo(image, min(cols, LOGO_MAX_COLS), min(rows, LOGO_MAX_ROWS),
-                                   self.logo_style)
-        # the badge: always to hand, so the layout never waits for a download
-        return render_badge(team, league, cols, rows)
+                lines = render_logo(image, min(cols, LOGO_MAX_COLS), min(rows, LOGO_MAX_ROWS),
+                                    self.logo_style, glow=light)
+        if lines is None:
+            # the badge: always to hand, so the layout never waits for a download
+            lines = render_badge(team, league, cols, rows, glow=light)
+        if phase is not None:
+            # its cells move: "~g" marks them for CRT mode (put_span)
+            lines = [Line((text, style + "~g" if style.startswith("@") and "~" not in style
+                           else style) for text, style in line) for line in lines]
+        return lines
+
+    def glow_key(self, league, ident, cols, rows, colours):
+        cell = (max(1, round(self.cell[0])), max(1, round(self.cell[1])))
+        return ("glow", league, ident, cols, rows, cell, colours, self.crt_phosphor), cell
+
+    def glow_ready(self, league, team, cols, rows):
+        """Whether a glow on this logo can start: in text at once; with
+        pictures once its sheet is made (or could not be), asking for it."""
+        if not self.graphics.enabled:
+            return True
+        png = self.logos.get(league, team, raw=True)
+        size = png_size(png) if png else None
+        if not size:
+            return True                 # no picture (yet): it glows in text
+        c, r = fit_cells(size, cols, rows, self.cell)
+        if not (c and r) or r * GLOW_FRAMES > IMAGE_MAX:
+            return True
+        ident = str(team.get("id") or team.get("abbr") or "")
+        key, _ = self.glow_key(league, ident, c, r, glow_colours(league, team))
+        self.glow_cells(league, team, ident, png, c, r, None)
+        return self.sheets.ready(key)
+
+    def glow_cells(self, league, team, ident, png, cols, rows, phase):
+        """A logo's glow sheet at the frame for `phase` (None: only made
+        ready, nothing drawn): placeholder cells, or None while it is being
+        made or when it cannot be."""
+        if rows * GLOW_FRAMES > IMAGE_MAX:
+            return None
+        colours = glow_colours(league, team)
+        key, cell = self.glow_key(league, ident, cols, rows, colours)
+        tint = self.graphics.tint
+
+        def make():
+            sheet = glow_sheet(png, cols, rows, cell, colours)
+            return tint(sheet) if sheet and tint else sheet
+        sheet = self.sheets.get(key, make)
+        if not sheet or phase is None:
+            return None
+        image_id = self.graphics.place(key, sheet, cols, rows * GLOW_FRAMES, tinted=True,
+                                       moving=True)
+        if not image_id:
+            return None
+        return image_cells(image_id, cols, rows, glow_frame(phase) * rows)
 
     def small_logo(self, league, team, box_w, box_h):
         """A team's logo shrunk to fit box_w x box_h pixels (kept), or None
@@ -43612,9 +44410,18 @@ class App:
             art = None
             if winner:
                 self.palette.logo_begin((self.league, winner.get("id"), self.team_logos))
+                # picking a finished game lights its winner's logo for
+                # GLOW_FINAL seconds (7.5.0) - again each time it is picked,
+                # coming back to the Scoreboard too
+                key = (self.league, event["id"])
+                shown = self.final_glow
+                if shown["key"] != key or shown.get("frame") != self.frames_drawn - 1:
+                    shown = self.final_glow = {"key": key, "glow": {"start": None,
+                                                                    "length": GLOW_FINAL}}
+                shown["frame"] = self.frames_drawn
 
-                def art(cols, rows, team=winner):
-                    return self.team_art(self.league, team, cols, rows)
+                def art(cols, rows, team=winner, glow=shown["glow"]):
+                    return self.team_art(self.league, team, cols, rows, glow=glow)
             ours = self.league in WIRE_LEAGUES and event["state"] in ("in", "post") \
                 and DETAIL_LEADERS.get(sport_of(self.league))
             detail = render_game_preview(event, self.league, detail_width,
@@ -45954,7 +46761,11 @@ class App:
 
     def center_face(self, league, ref, cols, rows):
         """A player's photo for the Game Center, where the terminal shows
-        pictures; [] elsewhere, and while it downloads."""
+        pictures; [] elsewhere, and while it downloads. ref["outline"]
+        (7.5.0), while a leader's numbers blink: True for the photo in its
+        square yellow outline, False for it without (frames of one picture,
+        made off the main thread, which is asked for whenever the photo is
+        drawn so it is ready when the numbers change)."""
         url = ref.get("headshot") or ""
         if not (url and ref.get("id") and self.graphics.enabled):
             return []
@@ -45964,6 +46775,19 @@ class App:
         if not size:
             return []
         c, r = fit_cells(size, cols, rows, self.cell)
+        if c and r and 2 * r <= IMAGE_MAX:
+            cell = (max(1, round(self.cell[0])), max(1, round(self.cell[1])))
+            key = ("outline", league, str(ref["id"]), c, r, cell, self.crt_phosphor)
+            tint = self.graphics.tint
+
+            def make():
+                sheet = outline_sheet(png, c, r, cell)
+                return tint(sheet) if sheet and tint else sheet
+            sheet = self.sheets.get(key, make)
+            if sheet and ref.get("outline") is not None:
+                image_id = self.graphics.place(key, sheet, c, 2 * r, tinted=True, moving=True)
+                if image_id:
+                    return image_cells(image_id, c, r, r if ref["outline"] else 0)
         image_id = self.graphics.place(("photo", league, str(ref["id"])), png, c, r) \
             if c and r else None
         return image_cells(image_id, c, r) if image_id else []
@@ -47478,8 +48302,8 @@ class App:
     # -- the live wire -----------------------------------------------------
 
     def wire_reset(self, league=None):
-        self.wire = {"league": league, "facts": {}, "news": [], "tape": [], "pos": 0.0,
-                     "clock": None, "row": None, "width": 0, "drawn": 0.0, "live": False,
+        self.wire = {"league": league, "facts": {}, "news": [], "tape": [], "pos": 0,
+                     "beat": None, "row": None, "width": 0, "live": False,
                      "until": 0.0, "parsed": None, "gen": -1, "looked": 0.0,
                      "upsets": set(), "primed": False}
 
@@ -47638,15 +48462,12 @@ class App:
         league = self.wire.get("league")
         if not league:
             return
-        now = time.monotonic()
-        last = self.wire.get("clock")
         bug = f" {LEAGUES[league]['name']} LIVE "
         start = len(bug) + 2
         room = max(0, width - start - 1)
-        self.wire.update(clock=now, row=row, width=room, drawn=now)
+        self.wire.update(row=row, width=room)
         tape = self.wire["tape"]
-        if last is not None:
-            self.wire["pos"] += min(1.0, max(0.0, now - last)) * WIRE_SPEED
+        self.wire_step(time.monotonic())
         while tape and self.wire["pos"] >= tape[0]["width"]:
             self.wire["pos"] -= tape[0]["width"]
             tape.pop(0)
@@ -47661,7 +48482,7 @@ class App:
         self.put_pill(row, 1, bug, "wirebug") if bug.startswith(" ") and bug.endswith(" ") \
             else self.put(row, 1, bug, self.palette("wirebug"))
         self.hotspots = [spot for spot in self.hotspots if spot[0] != row]
-        x, skip = start, int(self.wire["pos"])
+        x, skip = start, self.wire["pos"]
         for segment in tape:
             if x >= start + room:
                 break
@@ -47676,26 +48497,48 @@ class App:
         if not tape:
             self.put(row, start, "Waiting for the night's first look…", self.palette("muted"))
 
+    def wire_step(self, now):
+        """The crawl one cell on when its beat has come (7.5.0): never more
+        than one, so a step that comes late (a long frame, a slow
+        terminal) is a moment's pause, not a jump. The beats count on from
+        the one that was due, keeping the pace; past a whole beat late,
+        from now."""
+        beat = self.wire.get("beat")
+        if beat is None:
+            self.wire["beat"] = now + WIRE_BEAT
+        elif now >= beat:
+            self.wire["pos"] += 1
+            self.wire["beat"] = beat + WIRE_BEAT if now - beat < WIRE_BEAT else now + WIRE_BEAT
+
+    def wire_moving(self):
+        """Whether the crawl steps between full frames now: it is on the
+        screen and nothing is drawn over it."""
+        return self.wire.get("row") is not None and self.wire.get("beat") is not None and \
+            not (self.show_help or self.show_info or self.calendar or self.popup or
+                 self.kim or self.article or self.crt_card or self.settings_card or
+                 self.banner or self.roster)
+
     def draw_wire_safely(self, row, width):
         try:
             self.draw_wire(row, width)
         except curses.error:
             pass
         except Exception:  # noqa: BLE001 - the wire is a nicety, never a crash
-            self.wire.update(tape=[], pos=0.0, row=None)
+            self.wire.update(tape=[], pos=0, row=None)
 
     def draw_wire_only(self):
         """One step of the crawl, without drawing the rest of the screen."""
         row = self.wire.get("row")
-        if row is None or self.show_help or self.show_info or self.calendar or \
-                self.popup or self.kim or self.article or self.crt_card or \
-                self.settings_card or self.banner or self.roster:
+        if not self.wire_moving():
             return
         height, width = self.stdscr.getmaxyx()
         if row >= height - 1:
             return
         self.draw_wire_safely(row, width - 1)
-        self.present(full=False)
+        try:
+            self.present(full=False)
+        finally:
+            self.end_sync()
 
     def click_wire(self, league, ident):
         events = (self.wire.get("parsed") or (None, []))[1]
@@ -47947,6 +48790,7 @@ class App:
 
     def close_center(self):
         self.center = None
+        self.blinks.follow(None)        # opened again, its leaders start afresh
         self.palette.logo_begin(("free", time.time()))
         self.dirty = True
 
@@ -48018,15 +48862,19 @@ class App:
             return
         event, summary = self.center_data()
         now = time.time()
-        # a score since the last look flashes across the screen
+        # a score since the last look flashes across the screen, and lights
+        # the scoring team's logo (7.5.0: GLOW_GAME seconds, from when its
+        # glow is ready - a moment at most, as it is made beforehand)
         scores = (event["away"]["score"], event["home"]["score"])
         old = center["scores"]
-        if event["state"] == "in" and center["state"] == "in":
+        glows = center.setdefault("glow", {})
+        if center["state"] == "in":
             for index, side in enumerate(("away", "home")):
                 if scores[index] is not None and old[index] is not None and \
                         scores[index] > old[index]:
+                    glows[side] = {"start": None, "length": GLOW_GAME}
                     word = center_score_word(league, scores[index] - old[index])
-                    if word:
+                    if word and event["state"] == "in":
                         center["flash"] = (side, word, now + 6)
         if event["state"] == "post" and center["state"] == "in":
             winner = "home" if (scores[1] or 0) > (scores[0] or 0) else "away"
@@ -48042,10 +48890,17 @@ class App:
         if summary is None and event["state"] != "pre":
             context += " · loading the game file…"
         self.palette.logo_begin(("center", league, center["id"]))
+        self.blinks.follow((league, center["id"]))
+        for side in ("away", "home"):
+            glow = glows.get(side)
+            if glow and glow["start"] is not None and \
+                    time.monotonic() - glow["start"] >= glow["length"] + 1:
+                glows.pop(side)
         rows = compose_center(event, summary, league, width, height, now, flash,
                               self.favorites, context,
                               art=lambda side, cols, rows_, ev=event:
-                              self.team_art(league, ev[side], cols, rows_),
+                              self.team_art(league, ev[side], cols, rows_,
+                                            glow=glows.get(side) or {}),
                               corners=self.corners(),
                               face=lambda ref, cols, rows_:
                               self.center_face(league, ref, cols, rows_),
@@ -48054,11 +48909,15 @@ class App:
                               bulb_art=self.center_bulbs,
                               positions=self.center_positions(league, event),
                               pictures=self.graphics.enabled,
-                              hockey=self.hockey_live(event))
+                              hockey=self.hockey_live(event), blink=self.blinks)
         for y, line in enumerate(rows[:height]):
             self.put_spans(y, 0, line)
         if flash or (event["state"] == "pre" and countdown_text(event)[1].startswith("MIN")):
-            self.dirty = True           # keep the banner flashing, the seconds ticking
+            # the banner's next flash (it turns three times a second, the
+            # bulbs four) or the countdown's next second: a frame then (7.5.0:
+            # as an animation, which CRT mode does not type in again)
+            due = min((math.floor(now * beat) + 1) / beat for beat in ((3, 4) if flash else (1,)))
+            self.animate(time.monotonic() + max(0.0, due - now))
 
     def handle_center_key(self, key):
         if key == curses.KEY_RESIZE:
@@ -51143,10 +52002,16 @@ class App:
                     self._banner_beat = beat
                     self.dirty = True          # the flash's next colour, or its end
             kim_due = self.kim_next is not None and time.monotonic() >= self.kim_next
+            anim_due = not live and self.anim_next is not None and \
+                time.monotonic() >= self.anim_next
             if self.dirty or kim_due or generation != self.last_generation or \
-                    now - self.last_draw > 1.0:
+                    now - self.last_draw > 1.0 or anim_due:
                 # a frame fresh data drew (not a key): its changed numbers flash
                 self.crt.fresh = generation != self.last_generation and not self.dirty
+                # a frame only for what moves (a glow, a blink): CRT mode
+                # types none of it in again
+                self.anim_frame = anim_due and not (self.dirty or kim_due or
+                                                    generation != self.last_generation)
                 self.last_generation = generation
                 self.last_draw = now
                 self.dirty = False
@@ -51154,8 +52019,9 @@ class App:
                     self.draw()
                 except curses.error:
                     pass
-            elif self.wire["row"] is not None and not live and \
-                    time.monotonic() - self.wire["drawn"] >= WIRE_STEP:
+                finally:
+                    self.anim_frame = False
+            elif not live and self.wire_moving() and time.monotonic() >= self.wire["beat"]:
                 try:
                     self.draw_wire_only()      # the crawl steps between full frames
                 except curses.error:
@@ -51166,6 +52032,16 @@ class App:
                 except Exception as exc:  # noqa: BLE001 - the highlights never cost the app
                     self.video_failed(exc)
                 live = self.video_live()
+            if self.crt.on and not live:
+                # before the waits below are worked out (7.5.0), so the time
+                # its effects take is not added to them: an animation's next
+                # frame comes when it is due
+                try:
+                    self.crt.tick(self)
+                except Exception as exc:  # noqa: BLE001 - an effect must never cost the app
+                    self.crt_failed(exc)
+                finally:
+                    self.end_sync()
             # Ask Kim's mouth and bubble move every KIM_FRAME_MS: CRT mode's wait
             # (a slip seconds away, say) may only make the loop quicker, never slower
             if self.kim:
@@ -51173,8 +52049,13 @@ class App:
                 wait = KIM_FRAME_MS if due is None else \
                     max(1, min(KIM_FRAME_MS, int((due - time.monotonic()) * 1000) + 1))
             else:
-                wait = WIRE_STEP_MS if self.wire["row"] is not None else 200
-            for due in (self.font_size_due, self.recolour_at[0] if self.recolour_at else None):
+                wait = 200
+                if not live and self.wire_moving():
+                    # woken for the crawl's next beat, to the millisecond
+                    wait = max(1, min(wait, int((self.wire["beat"] - time.monotonic()) * 1000)
+                                      + 1))
+            for due in (self.font_size_due, self.recolour_at[0] if self.recolour_at else None,
+                        None if live else self.anim_next):
                 if due is not None:
                     wait = max(1, min(wait, int((due - time.monotonic()) * 1000) + 1))
             if self.roster and self.roster.get("due") and not self.roster.get("asked"):
@@ -51183,10 +52064,6 @@ class App:
                 beat_ms = BANNER_BEAT * 1000
                 wait = max(1, min(wait, int(beat_ms - (time.monotonic() * 1000) % beat_ms) + 1))
             if self.crt.on and not live:
-                try:
-                    self.crt.tick(self)
-                except Exception as exc:  # noqa: BLE001 - an effect must never cost the app
-                    self.crt_failed(exc)
                 soon = self.crt.wait_ms()
                 if soon is not None and (wait is None or soon < wait):
                     wait = soon

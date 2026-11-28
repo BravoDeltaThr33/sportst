@@ -116,6 +116,8 @@ Since 7.0.0 the pictures are drawn as the real thing in Kitty and Ghostty: hocke
 
 Press Z for the Game Center: the game full screen in team colours, the scores and the clock in light bulbs like an old stadium scoreboard, each team's badge (or its real logo) beside its score, live every ten seconds, drawn for its sport - a football field with the ball, the line of scrimmage and the line to gain; a baseball diamond with the runners, the count and who is pitching to whom; a basketball court with each team's shots, the runs and the team fouls, every part on a card of its own and the game's top performers beside them; a hockey rink with every shot on goal, the power play and the goalies; a soccer match timeline with every goal and card - plus ESPN's win probability and how it swung, the last plays, and a banner across the screen in the scoring team's colours for every TOUCHDOWN, GOAL or RUN SCORES. Since 6.12.0 every part sits on a card of its own, and the room under the home team's logo holds what matters most in the sport: basketball's top performers, football's leaders, hockey's goals and goalies, baseball's pitching, soccer's goals and cards. Before the start it counts down to kickoff, tip-off, puck drop or first pitch; after the final it keeps the scoring summary. Since 7.0.0 hockey's has a scorebug under each logo while the game is on, as basketball's and football's do: the team's shots on goal, POWER PLAY with the time left on it (or SHORT-HANDED for the side killing it), EMPTY NET while its goalie is out, and its one timeout, kept or used (the NHL's); and its shots on goal are drawn on the real rink in Kitty and Ghostty. On the Olympic sports Wikipedia covers, Z opens the Event Center: the podium in gold, silver and bronze (section 6).
 
+Since 7.5.0 the Game Center lights up with the game, in every sport and every league. When a team scores, the outline of its logo pulses with light for three seconds, in the team's two colours in turn - when LSU scores, purple and gold - and when you highlight a finished game on the Scoreboard, the winner's logo under it pulses the same way for five seconds. When the numbers of one of the leaders change (football's LEADERS, basketball's TOP PERFORMERS), the new numbers blink rapidly five times before they stay, and a square yellow outline blinks round the player's photo with them. It all works with CRT mode on.
+
 ### Before every game
 
 A scouting report: the line, ESPN's win predictor, the weather, each team's recent form, season leaders, the full injury list and the latest news, and every season stat side by side - with the matchup edges (one team's strength against the other's weakness) called out in colour so they jump off the screen. Pick a headline and press enter to read the whole story right in sportst, in a card over the report - or to play the video, when the headline is one.
@@ -142,7 +144,7 @@ sportst opens on the Overview: a retro SPORTS TERMINAL title, then every favorit
 
 ### Game day
 
-A BottomLine ticker over the bottom line pages through every league's scores, your teams first. While the league you are looking at has games on, a live wire crawls across the row above it: in hockey every goal as it goes in (who, how, who set it up, the score), power plays, pulled goalies and fights; in basketball the runs, comebacks, late lead changes, close finishes and big nights; in football every touchdown and field goal and every trip to the red zone; in baseball the runs and the no-hitters; everywhere overtime, upset alerts and the finals. Your teams' games put an alert on the bottom line when they start, at every score and at the final - whatever screen you are on, in any league (the terminal bell too, if you like) - and when one of them scores, a banner in its colours flashes over the ticker for three seconds: TOUCHDOWN ARKANSAS, DETROIT GOAL, ST LOUIS HOME RUN, in basketball only a three (OKC THREE). And the mouse works: click a tab, a game, a team or a setting, click it again to open it, scroll with the wheel.
+A BottomLine ticker over the bottom line pages through every league's scores, your teams first. While the league you are looking at has games on, a live wire crawls across the row above it - since 7.5.0 one cell at a time on a steady beat, so it reads smoothly: in hockey every goal as it goes in (who, how, who set it up, the score), power plays, pulled goalies and fights; in basketball the runs, comebacks, late lead changes, close finishes and big nights; in football every touchdown and field goal and every trip to the red zone; in baseball the runs and the no-hitters; everywhere overtime, upset alerts and the finals. Your teams' games put an alert on the bottom line when they start, at every score and at the final - whatever screen you are on, in any league (the terminal bell too, if you like) - and when one of them scores, a banner in its colours flashes over the ticker for three seconds: TOUCHDOWN ARKANSAS, DETROIT GOAL, ST LOUIS HOME RUN, in basketball only a three (OKC THREE). And the mouse works: click a tab, a game, a team or a setting, click it again to open it, scroll with the wheel.
 
 ### Settings
 
@@ -252,7 +254,7 @@ Other terminal windows that were already open need to be closed and opened again
 ### Step 5 - Check it and run it
 
 ```
-sportst --version               # sportst 7.4.1
+sportst --version               # sportst 7.5.0
 sportst --scores -L nba         # plain text: a quick network check
 sportst                         # the app
 ```
@@ -321,7 +323,7 @@ Q quits and closes the window. Ctrl+= and Ctrl+- make the text bigger and smalle
 
 ```
 cd $HOME\sportst
-py sportst --version            # sportst 7.4.1
+py sportst --version            # sportst 7.5.0
 py sportst --scores -L nba      # plain text: a quick network check
 py sportst                      # the app; Q quits
 ```
@@ -342,7 +344,7 @@ Another way to the full picture on Windows is the Linux version in WSL 2 with Ki
 cp /mnt/c/Users/YOUR-WINDOWS-NAME/Downloads/sportst ~/
 ```
 
-### Upgrading from an earlier version (for example 7.4.0 to 7.4.1)
+### Upgrading from an earlier version (for example 7.4.1 to 7.5.0)
 
 Your settings and favorites live in ~/.config/sportst and are not touched by an upgrade, so this only swaps the program file. (6.15.0 changed the look a new install starts with - the Retro NBC Sports scheme on ink, logos in blocks, CRT mode on in colour; a config.json that sportst wrote keeps every setting it had, and one written by hand gets the new defaults only for what it leaves out.)
 
@@ -383,12 +385,12 @@ chmod +x ~/.local/bin/sportst
 6. Check it:
 
 ```
-sportst --version               # sportst 7.4.1
+sportst --version               # sportst 7.5.0
 sudo apt install mpv            # optional: hear clips in the terminal
 sportst                         # O for Settings: enter opens a group's card
 ```
 
-7. Optional: clear the cache. Nothing in 7.4.1 needs it - it only changes which team's colour a basketball court's lane takes - but it is safe: logos, photos and Olympic pages are simply fetched again:
+7. Optional: clear the cache. Nothing in 7.5.0 needs it - the glow's and the outline's pictures are made as sportst runs and never saved - but it is safe: logos, photos and Olympic pages are simply fetched again:
 
 ```
 rm -rf ~/.cache/sportst
@@ -1046,6 +1048,12 @@ below      TEAM STATS as two-colour bars on the left (the score by
 
 Every score flashes a banner across the screen in the scoring team's colours - TOUCHDOWN, FIELD GOAL, EXTRA POINT, GOAL, RUN SCORES - and FINAL when it ends. Before the start the middle counts down to kickoff, tip-off, puck drop or first pitch, and under it are THE MATCHUP - the line, ESPN's predictor, the weather, the probable pitchers, each team's form, the venue and the TV - and SEASON LEADERS. After the final it keeps the result, the line score, the stats and the last plays (the game's leaders when there are none).
 
+**The glow (since 7.5.0).** In every sport and every league, when a team scores the outline of its logo beside the score pulses with light for three seconds: six pulses, each fading up and back down, in the team's two colours in turn - its own colour, then its second (ESPN's alternate colour; white when a team has none or the two are too alike). When LSU scores, purple, then gold, then purple again. With pictures (Kitty, Ghostty, WezTerm) the light is a glow spreading from the edge of the real logo, its outermost pixels lit; sportst works out each logo's frames beforehand, off to one side, and sends them once, so a glow costs the terminal nothing more while it pulses. In text the badge's (or the drawn logo's) outline is lit. On the Scoreboard, highlighting a finished game lights the winner's logo under it the same way for five seconds - again each time you come back to it.
+
+**Leaders' numbers (since 7.5.0).** While a game is on, when the numbers of one of the players in football's LEADERS or basketball's TOP PERFORMERS change, the numbers that changed blink rapidly five times - lit yellow, then gone - before they stay at the new values, and a square yellow outline blinks round the player's photo with them (where there is no photo - text art, or a player shown without one - the name lights up yellow instead).
+
+Both work with CRT mode on: CRT mode's typewriter, trails, update flash and glow leave what moves alone, so a glow or a blink is never typed in again or smeared.
+
 j / k (or h / l, the arrows, or the mouse wheel) step through that day's other games without leaving the Game Center; enter opens the game's box score (its scouting report before the start); R refreshes; X stops a clip that is playing; esc, Q or Z closes; ? and I open the key list and the Info pop-up over it. It needs 50 columns by 10 rows and uses everything above that: the big digits, the field, the court, the rink and the win-probability line grow with the terminal, and below about 30 rows the sport's picture gives way to the score, the line score and the plays. The cards make room the same way: a short screen gets a smaller shot chart or rink, then no top row (the score by period moves over the team stats), then no win probability; TEAM STATS and LAST PLAYS always stay. The card under the home team's logo needs about 110 columns in football (104 in baseball, 100 in soccer, 82 beside hockey's numbers); basketball's TOP PERFORMERS needs about 125, and without it each side's top scorer moves into THE GAME.
 
 **TOP PERFORMERS** (basketball, since 6.12.0) ranks each team's players by game score, John Hollinger's one-number box score (points + 0.4 × field goals made − 0.7 × field goals tried − 0.4 × free throws missed + 0.7 × offensive rebounds + 0.3 × defensive rebounds + steals + 0.7 × assists + 0.7 × blocks − 0.4 × fouls − turnovers), the same measure as the Boxscore's top performers: up to four a team, each with his game score and his line (points, rebounds, assists, steals and blocks when he has two, field goals). While the game is on, a player two fouls from fouling out (four in the NBA, three in college) shows his fouls in amber, one foul away in red, and a player who has fouled out says so. On a narrower card a line keeps points, rebounds and assists. In Kitty or Ghostty each team's best is in his photo beside the team (ESPN's headshot).
@@ -1076,6 +1084,8 @@ The other sports get their own news, the same way:
 - **Football**: KICKOFF, **TOUCHDOWN**, **FIELD GOAL** and every other score, **RED ZONE** (who has the ball, the down) and **OVERTIME**; beside each game who has the ball and the down.
 - **Baseball**: FIRST PITCH, **RUN SCORES** (2 RUNS SCORE …), a **NO-HITTER WATCH** from the sixth on, **EXTRA INNINGS**.
 - **Every sport**: ▲ UPSET WATCH, and in college **▲ UPSET ALERT** when an unranked team (or one ten places lower) leads a ranked one in the second half; ▲ UPSET and the FINAL.
+
+Since 7.5.0 the crawl moves one cell at a time, nine cells a second, on a beat of its own between the screen's frames: a busy screen or a slow moment makes it pause for an instant, never jump ahead, and the rest of the screen is not drawn again for it. In CRT mode the typewriter, the trails, the update flash and the glow leave its row alone, so it reads as smoothly as a broadcast's crawl.
 
 Click an item to open its game. The NHL's items come from its own scoreboard and game centers (api-web.nhle.com), the AHL's from HockeyTech, the other leagues' from ESPN's scoreboard; they are read every 20 to 60 seconds while games are on. Settings → Game day → Live wire turns it off.
 
@@ -1706,6 +1716,8 @@ Everything else on the screen stays text and works exactly the same. Setting Tea
 
 How it knows: before the full-screen app starts, sportst asks the terminal its name and version, asks whether it can take a picture (a Kitty graphics query), and then asks one question every terminal answers, so the wait ends as soon as that answer comes back. Pictures are used when the terminal says it can take them and it is Kitty, Ghostty or WezTerm. Kitty and Ghostty show them as Unicode placeholder cells that curses can draw like any other text; WezTerm does not draw those cells, so there sportst lays each picture over its own cells itself after every frame (since 7.4.0). Every other terminal gets text art, and so does Kitty, Ghostty or WezTerm inside tmux or screen, which do not pass the question on. Windows gives a program no way to ask the terminal, so there sportst shows pictures only when told: Settings, Pictures, real images, or SPORTST_PICTURES=images in the terminal's environment, which sportst's own window sets (section 17). The System card on the Settings tab (About sportst) says what it found, for example "Pictures: real images (kitty answered) · kitty(0.32.2)".
 
+**Each terminal at its best (since 7.5.0).** Kitty and Ghostty are the standard sportst is drawn to, and it now reads the version in the terminal's answer and asks two more questions on the way: whether the terminal shows each frame whole (synchronized output, so a frame never shows half drawn) and whether it keeps a picture's frames. Then each terminal gets the best it can show. Kitty 0.28 and newer and Ghostty draw pictures in placeholder cells; an older Kitty, which would print those cells as they are, gets text art. WezTerm has its pictures laid over their cells (since 7.4.0). Ghostty before 1.4 keeps only one frame of a picture, so there the CRT glass's flicker and grain go as tall strips of frames, stepped through by moving the picture, and move as they do in Kitty (before, they stood still there). Every other terminal gets text art, and frames drawn as they come. The System card's Drawing row says what was found, for example "kitty 0.32.2 · each frame drawn whole · pictures in their cells · moving pictures by their frames".
+
 ```
 "pictures": "auto"     ask the terminal when sportst starts (the
                        default)
@@ -1820,6 +1832,8 @@ Kitty, Ghostty and WezTerm, on top
   Bezel              a dark frame round the picture, its opening's
                      corners rounded, the tube set back behind it
 ```
+
+What moves on its own - a scoring team's glowing logo, a leader's blinking numbers and photo outline, the live wire's crawl - is left alone by the typewriter, the trails, the update flash and the glow (since 7.5.0), so with CRT mode on it moves as cleanly as without.
 
 Two of those are as near as a terminal gets. Curvature bends the glass, not the text: the characters and the scanlines stay on their grid, and the rim and the bezel give the bulge. (Until 6.10.2 the scanlines bowed too, but lines that fine, bent across the screen's pixel grid, broke their rhythm into wavy creases - so they stay straight.) The bezel needs room of its own, so while it shows (a screen of 64 columns and 16 rows or more) sportst gives it the outer ring of cells - a row at the top and the bottom, two columns at the left and one at the right - and draws everything inside it.
 
